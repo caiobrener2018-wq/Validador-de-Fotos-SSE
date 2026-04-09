@@ -79,7 +79,7 @@ const Index = () => {
   const filteredAgents = agents.filter(agent => {
     if (filter === 'all') return true;
     const allDone = agent.photos.every(p => p.status === 'done' || p.status === 'error');
-    if (!allDone) return filter === 'all';
+    if (!allDone) return true;
     const hasInconsistency = agent.photos.some(p => p.analysis && !p.analysis.aprovada);
     return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
   });
