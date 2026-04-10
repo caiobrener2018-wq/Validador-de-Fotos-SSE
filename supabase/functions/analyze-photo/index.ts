@@ -5,19 +5,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+function respond(ok: boolean, data: Record<string, unknown>) {
+  return new Response(JSON.stringify({ ok, ...data }), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const { imageUrl, companyName, segment } = await req.json();
-    if (!imageUrl) {
-      return new Response(JSON.stringify({ error: "imageUrl is required" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    if (!LOVABLE_API_KEY) return respond(false, { error: "LOVABLE_API_KEY not configured" });
 
     const contextInfo = companyName || segment
       ? `\n\nCONTEXTO DA VISITA:
@@ -112,20 +115,14 @@ Responda EXATAMENTE neste formato JSON:
 
     if (!response.ok) {
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit excedido. Tente novamente em alguns segundos." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return respond(false, { error: "rate_limit", message: "Rate limit excedido. Tente novamente em alguns segundos." });
       }
       if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos insuficientes. Adicione créditos no workspace." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        return respond(false, { error: "credits_exhausted", message: "Créditos insuficientes." });
       }
       const text = await response.text();
       console.error("AI error:", response.status, text);
-      return new Response(JSON.stringify({ error: "Erro na análise da IA" }), {
-        status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return respond(false, { error: "ai_error", message: "Erro na análise da IA" });
     }
 
     const data = await response.json();
@@ -144,13 +141,9 @@ Responda EXATAMENTE neste formato JSON:
       }
     }
 
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return respond(true, result);
   } catch (e) {
     console.error("Error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return respond(false, { error: "unknown", message: e instanceof Error ? e.message : "Erro desconhecido" });
   }
 });
