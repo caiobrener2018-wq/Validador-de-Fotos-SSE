@@ -53,22 +53,45 @@ const Index = () => {
         updatedAgents[i].photos[j].status = 'analyzing';
         setAgents([...updatedAgents]);
 
-        try {
-          const { data, error } = await supabase.functions.invoke('analyze-photo', {
-            body: {
-              imageUrl: updatedAgents[i].photos[j].url,
-              companyName: updatedAgents[i].companyName,
-              segment: updatedAgents[i].segment,
-            },
-          });
+        let retries = 0;
+        const maxRetries = 3;
+        let success = false;
 
-          if (error) throw error;
+        while (retries <= maxRetries && !success) {
+          try {
+            const { data } = await supabase.functions.invoke('analyze-photo', {
+              body: {
+                imageUrl: updatedAgents[i].photos[j].url,
+                companyName: updatedAgents[i].companyName,
+                segment: updatedAgents[i].segment,
+              },
+            });
 
-          updatedAgents[i].photos[j].analysis = data;
-          updatedAgents[i].photos[j].status = 'done';
-        } catch (err: any) {
-          updatedAgents[i].photos[j].status = 'error';
-          updatedAgents[i].photos[j].error = err?.message || 'Erro na análise';
+            if (data && data.ok === false && data.error === 'rate_limit') {
+              retries++;
+              if (retries <= maxRetries) {
+                await new Promise(r => setTimeout(r, 5000 * retries));
+                continue;
+              }
+              throw new Error('Rate limit excedido após múltiplas tentativas');
+            }
+
+            if (data && data.ok === false) {
+              throw new Error(data.message || 'Erro na análise');
+            }
+
+            const { ok, ...analysisResult } = data || {};
+            updatedAgents[i].photos[j].analysis = analysisResult;
+            updatedAgents[i].photos[j].status = 'done';
+            success = true;
+          } catch (err: any) {
+            if (retries >= maxRetries) {
+              updatedAgents[i].photos[j].status = 'error';
+              updatedAgents[i].photos[j].error = err?.message || 'Erro na análise';
+              success = true;
+            }
+            retries++;
+          }
         }
 
         done++;
@@ -76,7 +99,7 @@ const Index = () => {
         setAgents([...updatedAgents]);
 
         if (done < totalPhotos) {
-          await new Promise(r => setTimeout(r, 1500));
+          await new Promise(r => setTimeout(r, 3000));
         }
       }
     }
