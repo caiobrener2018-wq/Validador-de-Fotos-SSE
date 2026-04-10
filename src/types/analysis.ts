@@ -4,6 +4,8 @@ export interface PhotoAnalysis {
     fachada: boolean;
     empresario: boolean;
     interior: boolean;
+    fundo_valido: boolean;
+    contexto_segmento: boolean;
   };
   justificativa: string;
 }
@@ -17,6 +19,8 @@ export interface AgentPhoto {
 
 export interface AgentData {
   name: string;
+  companyName: string;
+  segment: string;
   photos: AgentPhoto[];
 }
 

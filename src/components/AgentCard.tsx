@@ -16,7 +16,10 @@ export function AgentCard({ agent }: Props) {
     <Card className={hasInconsistency && allDone ? 'border-destructive/50' : ''}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">{agent.name}</CardTitle>
+          <div className="min-w-0">
+            <CardTitle className="text-base">{agent.name}</CardTitle>
+            <p className="text-sm text-muted-foreground truncate">{agent.companyName}{agent.segment ? ` • ${agent.segment}` : ''}</p>
+          </div>
           {isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
           {allDone && !hasInconsistency && <Badge className="bg-green-600 hover:bg-green-700 text-white">Aprovado</Badge>}
           {allDone && hasInconsistency && <Badge variant="destructive">Inconsistência</Badge>}
@@ -62,6 +65,16 @@ export function AgentCard({ agent }: Props) {
                     {photo.analysis.criterios.fachada && <Badge variant="outline" className="text-xs">Fachada</Badge>}
                     {photo.analysis.criterios.empresario && <Badge variant="outline" className="text-xs">Empresário</Badge>}
                     {photo.analysis.criterios.interior && <Badge variant="outline" className="text-xs">Interior</Badge>}
+                    {photo.analysis.criterios.fundo_valido ? (
+                      <Badge variant="outline" className="text-xs border-green-500 text-green-700">Fundo OK</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs border-destructive text-destructive">Fundo Inválido</Badge>
+                    )}
+                    {photo.analysis.criterios.contexto_segmento ? (
+                      <Badge variant="outline" className="text-xs border-green-500 text-green-700">Segmento OK</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-xs border-destructive text-destructive">Segmento Incompatível</Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">{photo.analysis.justificativa}</p>
                 </div>
