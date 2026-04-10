@@ -1,39 +1,47 @@
 
 
-## Sebrae na Sua Empresa — Validador de Fotos
+## Modificações no Validador de Fotos
 
-### O que será construído
+### Resumo
 
-Um aplicativo web onde você faz upload da planilha Excel, e a IA analisa automaticamente cada foto dos agentes verificando se atendem aos critérios exigidos.
+Atualizar o sistema para: (1) ler empresa e segmento da planilha, (2) adicionar análise contextual de fundo baseada no segmento, (3) filtro por agente, (4) incluir guia de instalação local.
 
-### Funcionalidades
+### Mudanças
 
-**1. Upload e leitura da planilha**
-- Tela de upload para arquivo .xlsx
-- Leitura automática das colunas (agente + até 3 links de fotos)
-- Exibição da lista de agentes com suas fotos em cards
+**1. Tipos (`src/types/analysis.ts`)**
+- Adicionar `companyName` e `segment` ao `AgentData`
+- Adicionar novo critério `contexto_segmento` (boolean) e `fundo_valido` na análise
+- Criar tipo para representar um "atendimento" (agente + empresa + segmento + fotos)
 
-**2. Análise automática por IA (visão computacional)**
-- Para cada foto, a IA verifica os 3 critérios:
-  - ✅ Mostra a marca/fachada da empresa?
-  - ✅ O agente aparece com o empresário?
-  - ✅ A foto é dentro do estabelecimento?
-- Cada foto recebe um status: **Aprovada** (atende pelo menos 1 critério) ou **Inconsistência** (não atende nenhum)
-- Justificativa da IA para cada classificação
+**2. Parser Excel (`src/lib/parseExcel.ts`)**
+- Coluna 1: nome do agente, Coluna 2: nome da empresa, Coluna 3: segmento
+- Colunas 4, 5, 6: URLs das fotos
+- Ajustar detecção de header
 
-**3. Dashboard de resultados**
-- Resumo geral: total de agentes, fotos analisadas, aprovadas vs inconsistências
-- Lista filtrável por status (todas / só inconsistências / só aprovadas)
-- Visualização das fotos com os resultados da análise lado a lado
+**3. Edge Function (`supabase/functions/analyze-photo/index.ts`)**
+- Receber `companyName` e `segment` além de `imageUrl`
+- Atualizar o prompt da IA para:
+  - Verificar se o fundo NÃO é parede lisa
+  - Cruzar o conteúdo visual com o segmento (farmácia → remédios, loja de roupa → roupas, etc.)
+  - Retornar novo critério `fundo_valido` e `contexto_segmento`
+- Atualizar o schema de tool calling com os novos campos
 
-**4. Relatório para download**
-- Geração de relatório Excel com os resultados da análise
-- Colunas: Agente, Foto 1/2/3, Status de cada foto, Justificativa da IA
-- Destaque em vermelho para inconsistências
+**4. Componentes UI**
+- `AgentCard.tsx`: exibir empresa e segmento, mostrar badges dos novos critérios
+- `DashboardSummary.tsx`: manter estatísticas gerais
+- `Index.tsx`: adicionar filtro por agente (dropdown/select com nomes únicos dos agentes)
+- Atualizar a chamada `analyze-photo` para enviar empresa e segmento
 
-### Tecnologia
-- Frontend React com interface limpa e profissional
-- Supabase Edge Function + Lovable AI (Gemini com visão) para análise das imagens
-- Processamento com barra de progresso (100+ agentes = pode levar alguns minutos)
-- Leitura do Excel no navegador com biblioteca xlsx
+**5. Exportação (`src/lib/exportResults.ts`)**
+- Adicionar colunas Empresa e Segmento no relatório
+- Incluir os novos critérios (fundo válido, contexto do segmento)
+
+**6. Guia de instalação local**
+- Após implementar, forneço um passo-a-passo detalhado no chat para rodar o projeto localmente (Node.js, git clone, npm install, variáveis de ambiente, etc.)
+
+### Detalhes técnicos
+
+- O prompt da IA será enriquecido com contexto: "A empresa é [nome], do segmento [segmento]. Verifique se o fundo da imagem contém elementos compatíveis com esse segmento."
+- Filtro por agente usa um `Select` component com lista de agentes únicos extraídos da planilha
+- Nenhuma alteração de banco de dados necessária (tudo client-side + edge function)
 
