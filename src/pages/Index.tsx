@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { AgentData, FilterType } from '@/types/analysis';
 import { parseExcelFile } from '@/lib/parseExcel';
 import { exportResultsToExcel } from '@/lib/exportResults';
@@ -8,6 +8,7 @@ import { DashboardSummary } from '@/components/DashboardSummary';
 import { AgentCard } from '@/components/AgentCard';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Play, Download, Filter } from 'lucide-react';
 
@@ -17,14 +18,20 @@ const Index = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [filter, setFilter] = useState<FilterType>('all');
+  const [agentFilter, setAgentFilter] = useState<string>('all');
   const { toast } = useToast();
+
+  const uniqueAgentNames = useMemo(() => {
+    const names = [...new Set(agents.map(a => a.name))];
+    return names.sort();
+  }, [agents]);
 
   const handleFileSelected = useCallback(async (file: File) => {
     setIsLoadingFile(true);
     try {
       const parsed = await parseExcelFile(file);
       setAgents(parsed);
-      toast({ title: `${parsed.length} agentes carregados`, description: `${parsed.reduce((s, a) => s + a.photos.length, 0)} fotos encontradas` });
+      toast({ title: `${parsed.length} atendimentos carregados`, description: `${parsed.reduce((s, a) => s + a.photos.length, 0)} fotos encontradas` });
     } catch {
       toast({ title: 'Erro ao ler planilha', variant: 'destructive' });
     } finally {
@@ -43,13 +50,16 @@ const Index = () => {
 
     for (let i = 0; i < updatedAgents.length; i++) {
       for (let j = 0; j < updatedAgents[i].photos.length; j++) {
-        // Mark analyzing
         updatedAgents[i].photos[j].status = 'analyzing';
         setAgents([...updatedAgents]);
 
         try {
           const { data, error } = await supabase.functions.invoke('analyze-photo', {
-            body: { imageUrl: updatedAgents[i].photos[j].url },
+            body: {
+              imageUrl: updatedAgents[i].photos[j].url,
+              companyName: updatedAgents[i].companyName,
+              segment: updatedAgents[i].segment,
+            },
           });
 
           if (error) throw error;
@@ -65,7 +75,6 @@ const Index = () => {
         setProgress(Math.round((done / totalPhotos) * 100));
         setAgents([...updatedAgents]);
 
-        // Small delay to avoid rate limits
         if (done < totalPhotos) {
           await new Promise(r => setTimeout(r, 1500));
         }
@@ -77,6 +86,7 @@ const Index = () => {
   }, [agents, toast]);
 
   const filteredAgents = agents.filter(agent => {
+    if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
     if (filter === 'all') return true;
     const allDone = agent.photos.every(p => p.status === 'done' || p.status === 'error');
     if (!allDone) return true;
@@ -133,6 +143,18 @@ const Index = () => {
                 </Button>
               )}
 
+              <Select value={agentFilter} onValueChange={setAgentFilter}>
+                <SelectTrigger className="w-[220px]">
+                  <SelectValue placeholder="Filtrar por agente" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os agentes</SelectItem>
+                  {uniqueAgentNames.map(name => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <div className="flex items-center gap-1 ml-auto">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 {(['all', 'approved', 'inconsistent'] as FilterType[]).map(f => (
@@ -155,7 +177,7 @@ const Index = () => {
             </div>
 
             {filteredAgents.length === 0 && (
-              <p className="text-center text-muted-foreground py-8">Nenhum agente encontrado com esse filtro.</p>
+              <p className="text-center text-muted-foreground py-8">Nenhum atendimento encontrado com esse filtro.</p>
             )}
           </>
         )}
