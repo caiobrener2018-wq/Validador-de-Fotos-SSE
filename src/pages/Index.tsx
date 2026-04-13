@@ -14,11 +14,11 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useToast } from '@/hooks/use-toast';
 import { Play, Download, Filter, RefreshCw, ImageDown } from 'lucide-react';
 
-const CONCURRENCY = 2;
+const CONCURRENCY = 1;
 
 async function analyzeWithRetry(
   photo: { url: string; companyName: string; segment: string },
-  maxRetries = 5
+  maxRetries = 8
 ): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const controller = new AbortController();
@@ -32,7 +32,7 @@ async function analyzeWithRetry(
 
       if (data?.ok === false && data.error === 'rate_limit') {
         if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
+          await new Promise(r => setTimeout(r, 3000 * Math.pow(2, attempt)));
           continue;
         }
         throw new Error('Rate limit excedido');
@@ -44,7 +44,7 @@ async function analyzeWithRetry(
     } catch (err: any) {
       clearTimeout(timeout);
       if (attempt >= maxRetries) throw err;
-      await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt)));
+      await new Promise(r => setTimeout(r, 3000 * Math.pow(2, attempt)));
     }
   }
 }
@@ -127,7 +127,7 @@ const Index = () => {
       await Promise.all(promises);
 
       if (i + CONCURRENCY < tasks.length) {
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 4000));
       }
     }
 
