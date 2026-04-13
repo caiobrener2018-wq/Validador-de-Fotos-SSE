@@ -21,6 +21,7 @@ export interface AgentData {
   name: string;
   companyName: string;
   segment: string;
+  sourceFile: string;
   photos: AgentPhoto[];
 }
 

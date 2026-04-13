@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { AgentData } from '@/types/analysis';
 
 export function parseExcelFile(file: File): Promise<AgentData[]> {
+  const sourceFile = file.name;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -34,7 +35,7 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
           }
 
           if (photos.length > 0) {
-            agents.push({ name, companyName, segment, photos });
+            agents.push({ name, companyName, segment, sourceFile, photos });
           }
         }
 
