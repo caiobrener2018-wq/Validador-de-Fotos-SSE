@@ -157,11 +157,18 @@ const Index = () => {
             <h1 className="text-xl font-bold text-foreground">Sebrae na Sua Empresa</h1>
             <p className="text-sm text-muted-foreground">Validador de Fotos de Visita</p>
           </div>
-          <div className="flex gap-2">
-            {agents.length > 0 && (
-              <FileUpload onFilesSelected={handleFilesSelected} isLoading={isLoadingFile} />
-            )}
-          </div>
+          {agents.length > 0 && (
+            <label className="cursor-pointer">
+              <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => {
+                const files = e.target.files ? Array.from(e.target.files) : [];
+                if (files.length > 0) handleFilesSelected(files);
+                e.target.value = '';
+              }} className="hidden" disabled={isLoadingFile} />
+              <span className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors">
+                + Adicionar Planilhas
+              </span>
+            </label>
+          )}
         </div>
       </header>
 
