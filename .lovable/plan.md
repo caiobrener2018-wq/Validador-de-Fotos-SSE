@@ -1,47 +1,66 @@
 
 
-## Modificações no Validador de Fotos
+## Melhorias no Validador de Fotos
 
 ### Resumo
 
-Atualizar o sistema para: (1) ler empresa e segmento da planilha, (2) adicionar análise contextual de fundo baseada no segmento, (3) filtro por agente, (4) incluir guia de instalação local.
+Implementar upload múltiplo de planilhas, filtros por empresa/planilha, exportação separada de imagens e relatórios por empresa, melhorar resiliência da análise, e adicionar funcionalidades extras.
 
-### Mudanças
+### 1. Upload múltiplo de planilhas
 
-**1. Tipos (`src/types/analysis.ts`)**
-- Adicionar `companyName` e `segment` ao `AgentData`
-- Adicionar novo critério `contexto_segmento` (boolean) e `fundo_valido` na análise
-- Criar tipo para representar um "atendimento" (agente + empresa + segmento + fotos)
+- `FileUpload.tsx`: aceitar `multiple` no input e processar múltiplos arquivos no drag & drop
+- Cada planilha vira uma "fonte" com nome do arquivo
+- `AgentData` ganha campo `sourceFile: string` para rastrear de qual planilha veio
+- `parseExcel.ts`: receber nome do arquivo e incluir no resultado
+- `Index.tsx`: acumular dados de múltiplas planilhas (não substituir, concatenar)
 
-**2. Parser Excel (`src/lib/parseExcel.ts`)**
-- Coluna 1: nome do agente, Coluna 2: nome da empresa, Coluna 3: segmento
-- Colunas 4, 5, 6: URLs das fotos
-- Ajustar detecção de header
+### 2. Filtro por empresa/planilha
 
-**3. Edge Function (`supabase/functions/analyze-photo/index.ts`)**
-- Receber `companyName` e `segment` além de `imageUrl`
-- Atualizar o prompt da IA para:
-  - Verificar se o fundo NÃO é parede lisa
-  - Cruzar o conteúdo visual com o segmento (farmácia → remédios, loja de roupa → roupas, etc.)
-  - Retornar novo critério `fundo_valido` e `contexto_segmento`
-- Atualizar o schema de tool calling com os novos campos
+- Novo Select para filtrar por `sourceFile` (nome da planilha)
+- Novo Select para filtrar por `companyName`
+- Ambos funcionam em conjunto com o filtro de agente e status existentes
 
-**4. Componentes UI**
-- `AgentCard.tsx`: exibir empresa e segmento, mostrar badges dos novos critérios
-- `DashboardSummary.tsx`: manter estatísticas gerais
-- `Index.tsx`: adicionar filtro por agente (dropdown/select com nomes únicos dos agentes)
-- Atualizar a chamada `analyze-photo` para enviar empresa e segmento
+### 3. Exportação separada
 
-**5. Exportação (`src/lib/exportResults.ts`)**
-- Adicionar colunas Empresa e Segmento no relatório
-- Incluir os novos critérios (fundo válido, contexto do segmento)
+- **Dropdown de exportação** com opções:
+  - Exportar relatório completo (Excel)
+  - Exportar relatório da empresa/planilha filtrada
+  - Exportar somente imagens (ZIP com as fotos organizadas por empresa)
+  - Exportar imagens da empresa/planilha filtrada
+- Para download de imagens: usar `JSZip` para criar ZIP no navegador, fazendo fetch de cada URL e organizando em pastas por empresa
+- Instalar dependência `jszip`
 
-**6. Guia de instalação local**
-- Após implementar, forneço um passo-a-passo detalhado no chat para rodar o projeto localmente (Node.js, git clone, npm install, variáveis de ambiente, etc.)
+### 4. Melhorar resiliência da análise (sem reduzir velocidade)
+
+- **Retry com backoff exponencial** mais inteligente: começar com 2s, dobrar a cada retry, máximo 5 retries
+- **Re-analisar apenas erros**: botão "Reanalisar falhas" que processa somente fotos com `status === 'error'`
+- **Processamento paralelo controlado**: enviar 2-3 requisições simultâneas (concorrência limitada) em vez de 1 por vez, mantendo intervalo entre lotes para evitar rate limit
+- **Timeout por requisição**: se a edge function não responder em 30s, abortar e marcar como erro para retry
+
+### 5. Sugestões de melhorias adicionais
+
+Estas são ideias que posso implementar agora ou em versões futuras:
+
+- **Visualização em tabela**: além dos cards, uma view de tabela compacta para ver todos os resultados de uma vez
+- **Estatísticas por agente**: dashboard mostrando taxa de aprovação por agente (quem tem mais inconsistências)
+- **Ampliação de foto**: clicar na thumbnail abre a imagem em tamanho maior num modal
+- **Persistência no banco**: salvar resultados no banco de dados para consulta posterior sem precisar re-analisar
+- **Dark mode**: toggle claro/escuro
 
 ### Detalhes técnicos
 
-- O prompt da IA será enriquecido com contexto: "A empresa é [nome], do segmento [segmento]. Verifique se o fundo da imagem contém elementos compatíveis com esse segmento."
-- Filtro por agente usa um `Select` component com lista de agentes únicos extraídos da planilha
-- Nenhuma alteração de banco de dados necessária (tudo client-side + edge function)
+**Tipos atualizados (`src/types/analysis.ts`)**:
+- `AgentData` recebe `sourceFile: string`
+
+**Novos arquivos**:
+- `src/lib/exportImages.ts` — lógica de download de imagens em ZIP via JSZip
+
+**Arquivos modificados**:
+- `src/components/FileUpload.tsx` — aceitar múltiplos arquivos
+- `src/lib/parseExcel.ts` — receber e incluir `sourceFile`
+- `src/pages/Index.tsx` — filtros de empresa/planilha, dropdown de exportação, retry inteligente, concorrência controlada
+- `src/lib/exportResults.ts` — aceitar filtro para exportar por empresa
+- `src/components/DashboardSummary.tsx` — exibir contagem de planilhas carregadas
+
+**Dependência nova**: `jszip` para geração de ZIP de imagens no browser
 
