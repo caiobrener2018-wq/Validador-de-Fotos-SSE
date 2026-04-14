@@ -22,7 +22,7 @@ export function AgentCard({ agent }: Props) {
           <div className="flex items-center justify-between">
             <div className="min-w-0">
               <CardTitle className="text-base">{agent.name}</CardTitle>
-              <p className="text-sm text-muted-foreground truncate">{agent.companyName}{agent.segment ? ` • ${agent.segment}` : ''}</p>
+              <p className="text-sm text-muted-foreground truncate">{agent.companyName}{agent.segment ? ` • ${agent.segment}` : ''} <span className="text-muted-foreground/60">• Linha {agent.excelRow}</span></p>
               <p className="text-xs text-muted-foreground/60 truncate">{agent.sourceFile}</p>
             </div>
             {isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
