@@ -203,7 +203,7 @@ const Index = () => {
                 </Button>
               )}
 
-              {hasResults && (
+              {agents.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline">
