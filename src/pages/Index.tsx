@@ -12,7 +12,8 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { Play, Download, Filter, RefreshCw, ImageDown } from 'lucide-react';
+import { ExportDialog } from '@/components/ExportDialog';
+import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet } from 'lucide-react';
 
 const CONCURRENCY = 1;
 
@@ -146,6 +147,7 @@ const Index = () => {
     return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
   }), [agents, agentFilter, companyFilter, fileFilter, filter]);
 
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const hasResults = agents.some(a => a.photos.some(p => p.status === 'done'));
   const hasErrors = agents.some(a => a.photos.some(p => p.status === 'error'));
 
@@ -204,27 +206,33 @@ const Index = () => {
               )}
 
               {agents.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
-                      <Download className="h-4 w-4 mr-2" /> Exportar
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <DropdownMenuItem onClick={() => exportResultsToExcel(agents)}>
-                      Relatório Completo (Excel)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => exportResultsToExcel(filteredAgents)}>
-                      Relatório Filtrado (Excel)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => exportImagesToZip(agents)}>
-                      <ImageDown className="h-4 w-4 mr-2" /> Todas as Imagens (ZIP)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => exportImagesToZip(filteredAgents)}>
-                      <ImageDown className="h-4 w-4 mr-2" /> Imagens Filtradas (ZIP)
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline">
+                        <Download className="h-4 w-4 mr-2" /> Exportar
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem onClick={() => exportResultsToExcel(agents)}>
+                        <FileSpreadsheet className="h-4 w-4 mr-2" /> Relatório Completo (Excel)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportResultsToExcel(filteredAgents)}>
+                        <FileSpreadsheet className="h-4 w-4 mr-2" /> Relatório Filtrado (Excel)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportImagesToZip(agents)}>
+                        <ImageDown className="h-4 w-4 mr-2" /> Todas as Imagens (ZIP)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => exportImagesToZip(filteredAgents)}>
+                        <ImageDown className="h-4 w-4 mr-2" /> Imagens Filtradas (ZIP)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setExportDialogOpen(true)}>
+                        <Download className="h-4 w-4 mr-2" /> Selecionar Planilhas...
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <ExportDialog open={exportDialogOpen} onOpenChange={setExportDialogOpen} agents={agents} />
+                </>
               )}
             </div>
 
