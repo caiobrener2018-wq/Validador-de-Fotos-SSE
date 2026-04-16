@@ -58,12 +58,10 @@ const Index = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
-  const [agencyFilter, setAgencyFilter] = useState<string>('all');
   const { toast } = useToast();
 
   const uniqueAgentNames = useMemo(() => [...new Set(agents.map(a => a.name))].sort(), [agents]);
   const uniqueCompanies = useMemo(() => [...new Set(agents.map(a => a.companyName).filter(Boolean))].sort(), [agents]);
-  const uniqueAgencies = useMemo(() => [...new Set(agents.map(a => a.agency).filter(Boolean))].sort(), [agents]);
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     setIsLoadingFile(true);
@@ -138,13 +136,12 @@ const Index = () => {
   const filteredAgents = useMemo(() => agents.filter(agent => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
     if (companyFilter !== 'all' && agent.companyName !== companyFilter) return false;
-    if (agencyFilter !== 'all' && agent.agency !== agencyFilter) return false;
     if (filter === 'all') return true;
     const allDone = agent.photos.every(p => p.status === 'done' || p.status === 'error');
     if (!allDone) return true;
     const hasInconsistency = agent.photos.some(p => p.analysis && !p.analysis.aprovada);
     return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
-  }), [agents, agentFilter, companyFilter, agencyFilter, filter]);
+  }), [agents, agentFilter, companyFilter, filter]);
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const hasResults = agents.some(a => a.photos.some(p => p.status === 'done'));
@@ -226,7 +223,7 @@ const Index = () => {
                         <ImageDown className="h-4 w-4 mr-2" /> Imagens Filtradas (ZIP)
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setExportDialogOpen(true)}>
-                        <Download className="h-4 w-4 mr-2" /> Selecionar Agências...
+                        <Download className="h-4 w-4 mr-2" /> Selecionar Empresas...
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -236,16 +233,6 @@ const Index = () => {
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
-              <Select value={agencyFilter} onValueChange={setAgencyFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Agência SSE" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as agências</SelectItem>
-                  {uniqueAgencies.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
-                </SelectContent>
-              </Select>
-
               <Select value={companyFilter} onValueChange={setCompanyFilter}>
                 <SelectTrigger className="w-[200px]">
                   <SelectValue placeholder="Empresa" />
