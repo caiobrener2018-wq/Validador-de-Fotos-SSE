@@ -30,9 +30,9 @@ export async function exportImagesToZip(agents: AgentData[], onProgress?: (pct: 
   const allPhotos: { folder: string; url: string; name: string }[] = [];
 
   for (const agent of agents) {
-    const agencyFolder = sanitize(agent.agency || 'Sem Agência');
-    const subFolder = sanitize(`${agent.companyName || agent.name} (Linha ${agent.excelRow})`);
-    const folder = `${agencyFolder}/${subFolder}`;
+    const companyFolder = sanitize(agent.companyName || 'Sem Empresa');
+    const subFolder = sanitize(`${agent.name} (Linha ${agent.excelRow})`);
+    const folder = `${companyFolder}/${subFolder}`;
     agent.photos.forEach((photo, idx) => {
       allPhotos.push({ folder, url: photo.url, name: `foto_${idx + 1}.jpg` });
     });
