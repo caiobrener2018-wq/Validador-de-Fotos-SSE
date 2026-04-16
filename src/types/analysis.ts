@@ -19,6 +19,7 @@ export interface AgentPhoto {
 
 export interface AgentData {
   name: string;
+  agency: string;
   companyName: string;
   segment: string;
   sourceFile: string;

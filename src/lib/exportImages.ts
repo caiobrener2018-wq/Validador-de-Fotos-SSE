@@ -8,11 +8,9 @@ async function fetchImageViaProxy(url: string): Promise<Blob | null> {
       body: { url },
     });
     if (error) throw error;
-    // data comes as Blob when responseType isn't json
     if (data instanceof Blob && data.size > 0) return data;
     return null;
   } catch {
-    // Fallback to direct fetch
     try {
       const response = await fetch(url);
       if (response.ok) return await response.blob();
@@ -23,12 +21,18 @@ async function fetchImageViaProxy(url: string): Promise<Blob | null> {
   }
 }
 
+function sanitize(name: string): string {
+  return (name || 'Sem Nome').replace(/[\\/:*?"<>|]/g, '_').trim() || 'Sem Nome';
+}
+
 export async function exportImagesToZip(agents: AgentData[], onProgress?: (pct: number) => void) {
   const zip = new JSZip();
   const allPhotos: { folder: string; url: string; name: string }[] = [];
 
   for (const agent of agents) {
-    const folder = `${agent.companyName || agent.name} (Linha ${agent.excelRow})`;
+    const agencyFolder = sanitize(agent.agency || 'Sem Agência');
+    const subFolder = sanitize(`${agent.companyName || agent.name} (Linha ${agent.excelRow})`);
+    const folder = `${agencyFolder}/${subFolder}`;
     agent.photos.forEach((photo, idx) => {
       allPhotos.push({ folder, url: photo.url, name: `foto_${idx + 1}.jpg` });
     });
@@ -54,3 +58,5 @@ export async function exportImagesToZip(agents: AgentData[], onProgress?: (pct: 
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export { fetchImageViaProxy };
