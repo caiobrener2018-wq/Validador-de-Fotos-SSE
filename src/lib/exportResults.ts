@@ -1,4 +1,3 @@
-import ExcelJS from 'exceljs';
 import { AgentData } from '@/types/analysis';
 import { fetchImageViaProxy } from './exportImages';
 
@@ -22,6 +21,7 @@ function detectExt(blob: Blob): 'jpeg' | 'png' {
 }
 
 export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pct: number) => void) {
+  const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Resultados');
 
