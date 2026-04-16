@@ -1,66 +1,60 @@
 
-
-## Melhorias no Validador de Fotos
+## Atualização: Nova Estrutura da Planilha com Agências
 
 ### Resumo
 
-Implementar upload múltiplo de planilhas, filtros por empresa/planilha, exportação separada de imagens e relatórios por empresa, melhorar resiliência da análise, e adicionar funcionalidades extras.
+Adicionar o campo "Agência SSE" como nova coluna na planilha, ajustar parser, filtros, exportação e relatório Excel para incluir e organizar por agência. Embutir as imagens diretamente no Excel exportado.
 
-### 1. Upload múltiplo de planilhas
+### Mudanças
 
-- `FileUpload.tsx`: aceitar `multiple` no input e processar múltiplos arquivos no drag & drop
-- Cada planilha vira uma "fonte" com nome do arquivo
-- `AgentData` ganha campo `sourceFile: string` para rastrear de qual planilha veio
-- `parseExcel.ts`: receber nome do arquivo e incluir no resultado
-- `Index.tsx`: acumular dados de múltiplas planilhas (não substituir, concatenar)
+**1. Nova estrutura da planilha (`src/lib/parseExcel.ts` + `src/types/analysis.ts`)**
+- Adicionar campo `agency: string` em `AgentData`
+- Atualizar parser para ler:
+  - Col 1: Nome do Agente
+  - Col 2: Nome da Agência SSE *(novo)*
+  - Col 3: Razão Social da empresa
+  - Col 4: Segmento
+  - Cols 5, 6, 7: Fotos (antes eram 4, 5, 6)
 
-### 2. Filtro por empresa/planilha
+**2. Novo filtro por Agência (`src/pages/Index.tsx`)**
+- Substituir o filtro "Planilha" por filtro "Agência SSE" (já que agora é uma planilha única)
+- Manter filtros por Agente e Empresa
+- Atualizar lista de agências únicas
 
-- Novo Select para filtrar por `sourceFile` (nome da planilha)
-- Novo Select para filtrar por `companyName`
-- Ambos funcionam em conjunto com o filtro de agente e status existentes
+**3. Exportação separada por agência**
+- Atualizar `ExportDialog.tsx`: trocar lista de "planilhas" por lista de "agências" com checkboxes
+- `exportImagesToZip`: organizar pastas como `Agência / Empresa (Linha X) / foto_N.jpg`
+- Permitir exportar Excel + ZIP filtrados por agência selecionada
 
-### 3. Exportação separada
+**4. Relatório Excel com imagens embutidas (`src/lib/exportResults.ts`)**
+- Nova estrutura de colunas:
+  - Linha Excel | Agente | Agência SSE | Empresa | Segmento | Foto 1 | Foto 2 | Foto 3 | Status Geral | Justificativas
+- Embutir imagens direto nas células usando `xlsx-js-style` ou abordagem com `ExcelJS` (que suporta `addImage`)
+- **Nota técnica**: a lib `xlsx` atual não embute imagens. Precisaremos adicionar `exceljs` como dependência (mantendo `xlsx` para o parsing)
+- Ajustar altura das linhas e largura das colunas para acomodar imagens (~120px)
+- Status Geral: "APROVADA" se todas as fotos passaram, "INCONSISTÊNCIA" se alguma falhou
+- Imagens baixadas via edge function `proxy-image` (já existente) para evitar CORS
 
-- **Dropdown de exportação** com opções:
-  - Exportar relatório completo (Excel)
-  - Exportar relatório da empresa/planilha filtrada
-  - Exportar somente imagens (ZIP com as fotos organizadas por empresa)
-  - Exportar imagens da empresa/planilha filtrada
-- Para download de imagens: usar `JSZip` para criar ZIP no navegador, fazendo fetch de cada URL e organizando em pastas por empresa
-- Instalar dependência `jszip`
+**5. Dashboard e UI**
+- `DashboardSummary.tsx`: trocar "planilhas carregadas" por "agências"
+- `AgentCard.tsx`: exibir o nome da agência junto com a empresa
+- `FileUpload.tsx`: voltar a aceitar apenas 1 planilha (remover `multiple`)
+- Remover botão "+ Adicionar Planilhas" do header
 
-### 4. Melhorar resiliência da análise (sem reduzir velocidade)
+**6. Manter intacto**
+- Botão "Reanalisar Falhas" (já existente)
+- Lógica de retry/concorrência atual
+- Modal de ampliação de foto
 
-- **Retry com backoff exponencial** mais inteligente: começar com 2s, dobrar a cada retry, máximo 5 retries
-- **Re-analisar apenas erros**: botão "Reanalisar falhas" que processa somente fotos com `status === 'error'`
-- **Processamento paralelo controlado**: enviar 2-3 requisições simultâneas (concorrência limitada) em vez de 1 por vez, mantendo intervalo entre lotes para evitar rate limit
-- **Timeout por requisição**: se a edge function não responder em 30s, abortar e marcar como erro para retry
+### Arquivos afetados
 
-### 5. Sugestões de melhorias adicionais
-
-Estas são ideias que posso implementar agora ou em versões futuras:
-
-- **Visualização em tabela**: além dos cards, uma view de tabela compacta para ver todos os resultados de uma vez
-- **Estatísticas por agente**: dashboard mostrando taxa de aprovação por agente (quem tem mais inconsistências)
-- **Ampliação de foto**: clicar na thumbnail abre a imagem em tamanho maior num modal
-- **Persistência no banco**: salvar resultados no banco de dados para consulta posterior sem precisar re-analisar
-- **Dark mode**: toggle claro/escuro
-
-### Detalhes técnicos
-
-**Tipos atualizados (`src/types/analysis.ts`)**:
-- `AgentData` recebe `sourceFile: string`
-
-**Novos arquivos**:
-- `src/lib/exportImages.ts` — lógica de download de imagens em ZIP via JSZip
-
-**Arquivos modificados**:
-- `src/components/FileUpload.tsx` — aceitar múltiplos arquivos
-- `src/lib/parseExcel.ts` — receber e incluir `sourceFile`
-- `src/pages/Index.tsx` — filtros de empresa/planilha, dropdown de exportação, retry inteligente, concorrência controlada
-- `src/lib/exportResults.ts` — aceitar filtro para exportar por empresa
-- `src/components/DashboardSummary.tsx` — exibir contagem de planilhas carregadas
-
-**Dependência nova**: `jszip` para geração de ZIP de imagens no browser
-
+- `src/types/analysis.ts` — adicionar `agency`, remover `sourceFile` (ou manter opcional)
+- `src/lib/parseExcel.ts` — nova ordem de colunas
+- `src/lib/exportResults.ts` — reescrita usando ExcelJS com imagens
+- `src/lib/exportImages.ts` — agrupar por agência
+- `src/components/ExportDialog.tsx` — filtro por agência
+- `src/pages/Index.tsx` — filtros e estado
+- `src/components/DashboardSummary.tsx` — contagem de agências
+- `src/components/AgentCard.tsx` — exibir agência
+- `src/components/FileUpload.tsx` — single file
+- `package.json` — adicionar `exceljs`
