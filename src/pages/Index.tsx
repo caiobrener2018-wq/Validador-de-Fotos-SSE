@@ -58,23 +58,22 @@ const Index = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
-  const [fileFilter, setFileFilter] = useState<string>('all');
+  const [agencyFilter, setAgencyFilter] = useState<string>('all');
   const { toast } = useToast();
 
   const uniqueAgentNames = useMemo(() => [...new Set(agents.map(a => a.name))].sort(), [agents]);
   const uniqueCompanies = useMemo(() => [...new Set(agents.map(a => a.companyName).filter(Boolean))].sort(), [agents]);
-  const uniqueFiles = useMemo(() => [...new Set(agents.map(a => a.sourceFile))].sort(), [agents]);
+  const uniqueAgencies = useMemo(() => [...new Set(agents.map(a => a.agency).filter(Boolean))].sort(), [agents]);
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     setIsLoadingFile(true);
     try {
-      const results = await Promise.all(files.map(f => parseExcelFile(f)));
-      const newAgents = results.flat();
-      setAgents(prev => [...prev, ...newAgents]);
+      const newAgents = await parseExcelFile(files[0]);
+      setAgents(newAgents);
       const totalPhotos = newAgents.reduce((s, a) => s + a.photos.length, 0);
-      toast({ title: `${files.length} planilha(s) carregada(s)`, description: `${newAgents.length} atendimentos, ${totalPhotos} fotos` });
+      toast({ title: 'Planilha carregada', description: `${newAgents.length} atendimentos, ${totalPhotos} fotos` });
     } catch {
-      toast({ title: 'Erro ao ler planilhas', variant: 'destructive' });
+      toast({ title: 'Erro ao ler planilha', variant: 'destructive' });
     } finally {
       setIsLoadingFile(false);
     }
@@ -139,13 +138,13 @@ const Index = () => {
   const filteredAgents = useMemo(() => agents.filter(agent => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
     if (companyFilter !== 'all' && agent.companyName !== companyFilter) return false;
-    if (fileFilter !== 'all' && agent.sourceFile !== fileFilter) return false;
+    if (agencyFilter !== 'all' && agent.agency !== agencyFilter) return false;
     if (filter === 'all') return true;
     const allDone = agent.photos.every(p => p.status === 'done' || p.status === 'error');
     if (!allDone) return true;
     const hasInconsistency = agent.photos.some(p => p.analysis && !p.analysis.aprovada);
     return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
-  }), [agents, agentFilter, companyFilter, fileFilter, filter]);
+  }), [agents, agentFilter, companyFilter, agencyFilter, filter]);
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const hasResults = agents.some(a => a.photos.some(p => p.status === 'done'));
@@ -161,13 +160,13 @@ const Index = () => {
           </div>
           {agents.length > 0 && (
             <label className="cursor-pointer">
-              <input type="file" accept=".xlsx,.xls" multiple onChange={(e) => {
+              <input type="file" accept=".xlsx,.xls" onChange={(e) => {
                 const files = e.target.files ? Array.from(e.target.files) : [];
                 if (files.length > 0) handleFilesSelected(files);
                 e.target.value = '';
               }} className="hidden" disabled={isLoadingFile} />
               <span className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent transition-colors">
-                + Adicionar Planilhas
+                Trocar Planilha
               </span>
             </label>
           )}
@@ -227,7 +226,7 @@ const Index = () => {
                         <ImageDown className="h-4 w-4 mr-2" /> Imagens Filtradas (ZIP)
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setExportDialogOpen(true)}>
-                        <Download className="h-4 w-4 mr-2" /> Selecionar Planilhas...
+                        <Download className="h-4 w-4 mr-2" /> Selecionar Agências...
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -237,13 +236,13 @@ const Index = () => {
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
-              <Select value={fileFilter} onValueChange={setFileFilter}>
+              <Select value={agencyFilter} onValueChange={setAgencyFilter}>
                 <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Planilha" />
+                  <SelectValue placeholder="Agência SSE" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas as planilhas</SelectItem>
-                  {uniqueFiles.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>)}
+                  <SelectItem value="all">Todas as agências</SelectItem>
+                  {uniqueAgencies.map(a => <SelectItem key={a} value={a}>{a}</SelectItem>)}
                 </SelectContent>
               </Select>
 
@@ -279,7 +278,7 @@ const Index = () => {
 
             <div className="grid gap-4 md:grid-cols-2">
               {filteredAgents.map((agent, idx) => (
-                <AgentCard key={`${agent.sourceFile}-${idx}`} agent={agent} />
+                <AgentCard key={`${agent.excelRow}-${idx}`} agent={agent} />
               ))}
             </div>
 

@@ -12,9 +12,9 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-        const startIdx = rows.length > 0 && typeof rows[0][0] === 'string' &&
-          (rows[0][0].toLowerCase().includes('agente') || rows[0][0].toLowerCase().includes('nome') || rows[0][0].toLowerCase().includes('consultor'))
-          ? 1 : 0;
+        // Detect header row
+        const firstCell = rows.length > 0 && typeof rows[0][0] === 'string' ? rows[0][0].toLowerCase() : '';
+        const startIdx = (firstCell.includes('agente') || firstCell.includes('nome') || firstCell.includes('consultor')) ? 1 : 0;
 
         const agents: AgentData[] = [];
         for (let i = startIdx; i < rows.length; i++) {
@@ -23,11 +23,12 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
           const name = String(row[0]).trim();
           if (!name) continue;
 
-          const companyName = row[1] ? String(row[1]).trim() : '';
-          const segment = row[2] ? String(row[2]).trim() : '';
+          const agency = row[1] ? String(row[1]).trim() : '';
+          const companyName = row[2] ? String(row[2]).trim() : '';
+          const segment = row[3] ? String(row[3]).trim() : '';
 
           const photos = [];
-          for (let j = 3; j <= 5; j++) {
+          for (let j = 4; j <= 6; j++) {
             const url = row[j] ? String(row[j]).trim() : '';
             if (url && (url.startsWith('http') || url.startsWith('www'))) {
               photos.push({ url: url.startsWith('www') ? `https://${url}` : url, status: 'pending' as const });
@@ -35,7 +36,7 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
           }
 
           if (photos.length > 0) {
-            agents.push({ name, companyName, segment, sourceFile, excelRow: i + 1, photos });
+            agents.push({ name, agency, companyName, segment, sourceFile, excelRow: i + 1, photos });
           }
         }
 

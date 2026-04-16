@@ -11,12 +11,12 @@ export function FileUpload({ onFilesSelected, isLoading }: FileUploadProps) {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
-    if (files.length > 0) onFilesSelected(files);
+    if (files.length > 0) onFilesSelected([files[0]]);
   }, [onFilesSelected]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
-    if (files.length > 0) onFilesSelected(files);
+    if (files.length > 0) onFilesSelected([files[0]]);
   }, [onFilesSelected]);
 
   return (
@@ -31,23 +31,25 @@ export function FileUpload({ onFilesSelected, isLoading }: FileUploadProps) {
         </div>
         <div className="text-center">
           <p className="text-lg font-semibold text-foreground">
-            {isLoading ? 'Carregando planilhas...' : 'Arraste suas planilhas aqui'}
+            {isLoading ? 'Carregando planilha...' : 'Arraste sua planilha aqui'}
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            ou clique para selecionar arquivos .xlsx (múltiplos permitidos)
+            ou clique para selecionar o arquivo .xlsx
+          </p>
+          <p className="text-xs text-muted-foreground/70 mt-2">
+            Colunas: Agente · Agência SSE · Empresa · Segmento · Foto 1 · Foto 2 · Foto 3
           </p>
         </div>
         <label className="cursor-pointer">
           <input
             type="file"
             accept=".xlsx,.xls"
-            multiple
             onChange={handleChange}
             className="hidden"
             disabled={isLoading}
           />
           <span className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground px-6 py-2 text-sm font-medium hover:bg-primary/90 transition-colors">
-            Selecionar Arquivos
+            Selecionar Arquivo
           </span>
         </label>
       </CardContent>
