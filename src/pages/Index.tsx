@@ -48,38 +48,6 @@ async function analyzeWithRetry(
   }
 }
 
-async function analyzeWithRetry(
-  photo: { url: string; companyName: string; segment: string },
-  maxRetries = 8
-): Promise<any> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-
-    try {
-      const { data } = await supabase.functions.invoke('analyze-photo', {
-        body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment },
-      });
-      clearTimeout(timeout);
-
-      if (data?.ok === false && data.error === 'rate_limit') {
-        if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 3000 * Math.pow(2, attempt)));
-          continue;
-        }
-        throw new Error('Rate limit excedido');
-      }
-      if (data?.ok === false) throw new Error(data.message || 'Erro na análise');
-
-      const { ok, ...result } = data || {};
-      return result;
-    } catch (err: any) {
-      clearTimeout(timeout);
-      if (attempt >= maxRetries) throw err;
-      await new Promise(r => setTimeout(r, 3000 * Math.pow(2, attempt)));
-    }
-  }
-}
 
 const Index = () => {
   const [agents, setAgents] = useState<AgentData[]>([]);
