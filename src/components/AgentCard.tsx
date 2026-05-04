@@ -11,7 +11,8 @@ interface Props {
 
 export function AgentCard({ agent }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
-  const allDone = agent.photos.every(p => p.status === 'done' || p.status === 'error');
+  const noPhotos = agent.photos.length === 0;
+  const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error');
   const hasInconsistency = agent.photos.some(p => p.analysis && !p.analysis.aprovada);
   const isAnalyzing = agent.photos.some(p => p.status === 'analyzing');
 
@@ -25,12 +26,18 @@ export function AgentCard({ agent }: Props) {
               {agent.agency && <p className="text-xs font-medium text-primary truncate">{agent.agency}</p>}
               <p className="text-sm text-muted-foreground truncate">{agent.companyName}{agent.segment ? ` • ${agent.segment}` : ''} <span className="text-muted-foreground/60">• Linha {agent.excelRow}</span></p>
             </div>
-            {isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
+            {noPhotos && <Badge variant="outline" className="border-amber-500 text-amber-700"><AlertTriangle className="h-3 w-3 mr-1" />Não possui fotos</Badge>}
+            {!noPhotos && isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
             {allDone && !hasInconsistency && <Badge className="bg-green-600 hover:bg-green-700 text-white">Aprovado</Badge>}
             {allDone && hasInconsistency && <Badge variant="destructive">Inconsistência</Badge>}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {noPhotos && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-50 dark:bg-amber-950/20 p-3 text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" /> Este atendimento não possui fotos enviadas pelo agente.
+            </div>
+          )}
           {agent.photos.map((photo, idx) => (
             <div key={idx} className="flex gap-3 items-start rounded-md border p-3 bg-muted/30">
               <div
