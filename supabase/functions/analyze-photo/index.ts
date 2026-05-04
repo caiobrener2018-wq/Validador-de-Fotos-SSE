@@ -16,11 +16,19 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { imageUrl, companyName, segment } = await req.json();
+    const { imageUrl, companyName, segment, keyIndex } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) return respond(false, { error: "LOVABLE_API_KEY not configured" });
+    // Coleta todas as chaves disponíveis: LOVABLE_API_KEY, LOVABLE_API_KEY_2 ... _10
+    const keys: string[] = [];
+    const primary = Deno.env.get("LOVABLE_API_KEY");
+    if (primary) keys.push(primary);
+    for (let i = 2; i <= 10; i++) {
+      const k = Deno.env.get(`LOVABLE_API_KEY_${i}`);
+      if (k) keys.push(k);
+    }
+    if (keys.length === 0) return respond(false, { error: "LOVABLE_API_KEY not configured" });
+    const LOVABLE_API_KEY = keys[(keyIndex ?? 0) % keys.length];
 
     const contextInfo = companyName || segment
       ? `\n\nCONTEXTO DA VISITA:
