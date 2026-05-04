@@ -57,7 +57,14 @@ const Index = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [companyFilter, setCompanyFilter] = useState<string>('all');
+  const [keyCount, setKeyCount] = useState<number>(1);
   const { toast } = useToast();
+
+  useEffect(() => {
+    supabase.functions.invoke('get-key-count').then(({ data }) => {
+      if (data?.count) setKeyCount(data.count);
+    }).catch(() => {});
+  }, []);
 
   const uniqueAgentNames = useMemo(() => [...new Set(agents.map(a => a.name))].sort(), [agents]);
   const uniqueCompanies = useMemo(() => [...new Set(agents.map(a => a.companyName).filter(Boolean))].sort(), [agents]);
@@ -93,22 +100,25 @@ const Index = () => {
     let done = 0;
     const total = tasks.length;
     const updated = [...agents];
+    const concurrency = Math.max(1, keyCount);
+    const delayMs = keyCount > 1 ? 500 : 4000;
 
-    for (let i = 0; i < tasks.length; i += CONCURRENCY) {
-      const batch = tasks.slice(i, i + CONCURRENCY);
+    for (let i = 0; i < tasks.length; i += concurrency) {
+      const batch = tasks.slice(i, i + concurrency);
 
       batch.forEach(t => {
         updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing';
       });
       setAgents([...updated]);
 
-      const promises = batch.map(async (t) => {
+      const promises = batch.map(async (t, bIdx) => {
         try {
           const agent = updated[t.agentIdx];
           const result = await analyzeWithRetry({
             url: agent.photos[t.photoIdx].url,
             companyName: agent.companyName,
             segment: agent.segment,
+            keyIndex: (i + bIdx) % concurrency,
           });
           updated[t.agentIdx].photos[t.photoIdx].analysis = result;
           updated[t.agentIdx].photos[t.photoIdx].status = 'done';
@@ -123,14 +133,14 @@ const Index = () => {
 
       await Promise.all(promises);
 
-      if (i + CONCURRENCY < tasks.length) {
-        await new Promise(r => setTimeout(r, 4000));
+      if (i + concurrency < tasks.length) {
+        await new Promise(r => setTimeout(r, delayMs));
       }
     }
 
     setIsAnalyzing(false);
     toast({ title: 'Análise concluída!', description: `${done} fotos processadas` });
-  }, [agents, toast]);
+  }, [agents, toast, keyCount]);
 
   const filteredAgents = useMemo(() => agents.filter(agent => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
