@@ -35,9 +35,7 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
             }
           }
 
-          if (photos.length > 0) {
-            agents.push({ name, agency, companyName, segment, sourceFile, excelRow: i + 1, photos });
-          }
+          agents.push({ name, agency, companyName, segment, sourceFile, excelRow: i + 1, photos });
         }
 
         resolve(agents);
