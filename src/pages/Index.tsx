@@ -91,6 +91,7 @@ const Index = () => {
     targetAgents.forEach((agent) => {
       const globalIdx = agents.indexOf(agent);
       agent.photos.forEach((photo, pIdx) => {
+        if (photo.duplicate) return; // skip duplicates
         if (!onlyErrors || photo.status === 'error') {
           tasks.push({ agentIdx: globalIdx, photoIdx: pIdx });
         }

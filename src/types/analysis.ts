@@ -13,8 +13,10 @@ export interface PhotoAnalysis {
 export interface AgentPhoto {
   url: string;
   analysis?: PhotoAnalysis;
-  status: 'pending' | 'analyzing' | 'done' | 'error';
+  status: 'pending' | 'analyzing' | 'done' | 'error' | 'duplicate';
   error?: string;
+  duplicate?: boolean;
+  duplicateOf?: { agent: string; company: string; row: number };
 }
 
 export interface AgentData {

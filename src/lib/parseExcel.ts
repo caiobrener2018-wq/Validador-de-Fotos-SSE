@@ -38,6 +38,22 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
           agents.push({ name, agency, companyName, segment, sourceFile, excelRow: i + 1, photos });
         }
 
+        // Detect duplicate photo URLs across all agents
+        const urlMap = new Map<string, { agent: string; company: string; row: number }>();
+        agents.forEach(a => {
+          a.photos.forEach(p => {
+            const key = p.url.trim().toLowerCase();
+            const existing = urlMap.get(key);
+            if (existing) {
+              p.duplicate = true;
+              p.status = 'duplicate';
+              p.duplicateOf = existing;
+            } else {
+              urlMap.set(key, { agent: a.name, company: a.companyName, row: a.excelRow });
+            }
+          });
+        });
+
         resolve(agents);
       } catch (err) {
         reject(err);
