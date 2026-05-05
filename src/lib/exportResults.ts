@@ -53,18 +53,30 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
     const row = ws.getRow(rowNum);
     row.height = 110;
 
-    const allDone = agent.photos.every(p => p.status === 'done');
+    const noPhotos = agent.photos.length === 0;
+    const allDuplicate = !noPhotos && agent.photos.every(p => p.status === 'duplicate');
+    const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'duplicate');
     const anyInconsistent = agent.photos.some(p => p.analysis && !p.analysis.aprovada);
+    const anyDuplicate = agent.photos.some(p => p.status === 'duplicate');
     const anyError = agent.photos.some(p => p.status === 'error');
     let status = 'PENDENTE';
-    if (allDone && !anyInconsistent) status = 'APROVADA';
-    else if (anyInconsistent) status = 'INCONSISTÊNCIA';
+    if (noPhotos) status = 'NÃO POSSUI FOTOS';
+    else if (allDuplicate) status = 'FOTOS DUPLICADAS';
+    else if (allDone && !anyInconsistent && !anyDuplicate) status = 'APROVADA';
+    else if (anyInconsistent || anyDuplicate) status = 'INCONSISTÊNCIA';
     else if (anyError) status = 'ERRO';
 
     const justificativas = agent.photos
-      .map((p, idx) => p.analysis ? `Foto ${idx + 1}: ${p.analysis.justificativa}` : (p.error ? `Foto ${idx + 1}: ${p.error}` : ''))
+      .map((p, idx) => {
+        if (p.status === 'duplicate') {
+          return `Foto ${idx + 1}: DUPLICADA${p.duplicateOf ? ` (já enviada por ${p.duplicateOf.agent} - ${p.duplicateOf.company}, linha ${p.duplicateOf.row})` : ''}`;
+        }
+        if (p.analysis) return `Foto ${idx + 1}: ${p.analysis.justificativa}`;
+        if (p.error) return `Foto ${idx + 1}: ${p.error}`;
+        return '';
+      })
       .filter(Boolean)
-      .join('\n');
+      .join('\n') || (noPhotos ? 'Agente não enviou fotos para este atendimento.' : '');
 
     row.getCell('row').value = agent.excelRow;
     row.getCell('agent').value = agent.name;
@@ -86,6 +98,12 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
     } else if (status === 'INCONSISTÊNCIA') {
       statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
       statusCell.font = { bold: true, color: { argb: 'FF991B1B' } };
+    } else if (status === 'NÃO POSSUI FOTOS') {
+      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+      statusCell.font = { bold: true, color: { argb: 'FF92400E' } };
+    } else if (status === 'FOTOS DUPLICADAS') {
+      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEDD5' } };
+      statusCell.font = { bold: true, color: { argb: 'FF9A3412' } };
     }
 
     // Embed photos in cells (Foto 1, Foto 2, Foto 3 -> columns 6,7,8)

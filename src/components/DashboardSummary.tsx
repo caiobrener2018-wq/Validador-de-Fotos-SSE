@@ -1,6 +1,6 @@
 import { AgentData } from '@/types/analysis';
 import { Card, CardContent } from '@/components/ui/card';
-import { CheckCircle, XCircle, Image, Users, Building2 } from 'lucide-react';
+import { CheckCircle, XCircle, Image, Users, Building2, AlertTriangle, Copy } from 'lucide-react';
 
 interface Props {
   agents: AgentData[];
@@ -11,6 +11,8 @@ export function DashboardSummary({ agents }: Props) {
   const analyzed = agents.reduce((sum, a) => sum + a.photos.filter(p => p.status === 'done').length, 0);
   const approved = agents.reduce((sum, a) => sum + a.photos.filter(p => p.analysis?.aprovada).length, 0);
   const inconsistent = analyzed - approved;
+  const noPhotosCount = agents.filter(a => a.photos.length === 0).length;
+  const duplicateCount = agents.reduce((sum, a) => sum + a.photos.filter(p => p.status === 'duplicate').length, 0);
   const companyCount = new Set(agents.map(a => a.companyName).filter(Boolean)).size;
 
   const stats = [
@@ -19,10 +21,12 @@ export function DashboardSummary({ agents }: Props) {
     { label: 'Fotos', value: totalPhotos, icon: Image, color: 'text-muted-foreground' },
     { label: 'Aprovadas', value: approved, icon: CheckCircle, color: 'text-green-600' },
     { label: 'Inconsistências', value: inconsistent, icon: XCircle, color: 'text-destructive' },
+    { label: 'Sem fotos', value: noPhotosCount, icon: AlertTriangle, color: 'text-amber-600' },
+    { label: 'Duplicadas', value: duplicateCount, icon: Copy, color: 'text-orange-600' },
   ];
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
       {stats.map((stat) => (
         <Card key={stat.label}>
           <CardContent className="flex items-center gap-3 p-4">
