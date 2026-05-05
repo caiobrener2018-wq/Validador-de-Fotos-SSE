@@ -147,9 +147,10 @@ const Index = () => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
     if (companyFilter !== 'all' && agent.companyName !== companyFilter) return false;
     if (filter === 'all') return true;
-    const allDone = agent.photos.every(p => p.status === 'done' || p.status === 'error');
-    if (!allDone) return true;
-    const hasInconsistency = agent.photos.some(p => p.analysis && !p.analysis.aprovada);
+    const noPhotos = agent.photos.length === 0;
+    const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
+    if (!noPhotos && !allDone) return true;
+    const hasInconsistency = noPhotos || agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
     return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
   }), [agents, agentFilter, companyFilter, filter]);
 
