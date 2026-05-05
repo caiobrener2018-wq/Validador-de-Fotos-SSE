@@ -3,7 +3,7 @@ import { AgentData } from '@/types/analysis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { CheckCircle, XCircle, Loader2, AlertTriangle } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, AlertTriangle, Copy } from 'lucide-react';
 
 interface Props {
   agent: AgentData;
@@ -12,9 +12,10 @@ interface Props {
 export function AgentCard({ agent }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const noPhotos = agent.photos.length === 0;
-  const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error');
-  const hasInconsistency = agent.photos.some(p => p.analysis && !p.analysis.aprovada);
+  const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
+  const hasInconsistency = agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
   const isAnalyzing = agent.photos.some(p => p.status === 'analyzing');
+  const allDuplicate = !noPhotos && agent.photos.every(p => p.status === 'duplicate');
 
   return (
     <>
@@ -27,9 +28,10 @@ export function AgentCard({ agent }: Props) {
               <p className="text-sm text-muted-foreground truncate">{agent.companyName}{agent.segment ? ` • ${agent.segment}` : ''} <span className="text-muted-foreground/60">• Linha {agent.excelRow}</span></p>
             </div>
             {noPhotos && <Badge variant="outline" className="border-amber-500 text-amber-700"><AlertTriangle className="h-3 w-3 mr-1" />Não possui fotos</Badge>}
+            {!noPhotos && allDuplicate && <Badge variant="outline" className="border-orange-500 text-orange-700"><Copy className="h-3 w-3 mr-1" />Fotos duplicadas</Badge>}
             {!noPhotos && isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
             {allDone && !hasInconsistency && <Badge className="bg-green-600 hover:bg-green-700 text-white">Aprovado</Badge>}
-            {allDone && hasInconsistency && <Badge variant="destructive">Inconsistência</Badge>}
+            {allDone && hasInconsistency && !allDuplicate && <Badge variant="destructive">Inconsistência</Badge>}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -54,6 +56,12 @@ export function AgentCard({ agent }: Props) {
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-muted-foreground mb-1">Foto {idx + 1}</p>
                 {photo.status === 'pending' && <p className="text-sm text-muted-foreground">Aguardando análise...</p>}
+                {photo.status === 'duplicate' && (
+                  <div className="flex items-start gap-1 text-sm text-orange-700">
+                    <Copy className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                    <span>Foto duplicada{photo.duplicateOf ? ` (já enviada por ${photo.duplicateOf.agent} - ${photo.duplicateOf.company}, linha ${photo.duplicateOf.row})` : ''}</span>
+                  </div>
+                )}
                 {photo.status === 'analyzing' && (
                   <div className="flex items-center gap-1 text-sm text-muted-foreground">
                     <Loader2 className="h-3 w-3 animate-spin" /> Analisando...
