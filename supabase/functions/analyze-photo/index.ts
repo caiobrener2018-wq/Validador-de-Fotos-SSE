@@ -12,6 +12,29 @@ function respond(ok: boolean, data: Record<string, unknown>) {
   });
 }
 
+function collectGeminiKeys(): string[] {
+  const keys: string[] = [];
+  for (let i = 1; i <= 10; i++) {
+    const k = Deno.env.get(`GEMINI_API_KEY_${i}`);
+    if (k) keys.push(k);
+  }
+  return keys;
+}
+
+async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType: string }> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Falha ao baixar imagem: ${r.status}`);
+  const mimeType = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
+  const buf = new Uint8Array(await r.arrayBuffer());
+  // base64 encode
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) {
+    binary += String.fromCharCode(...buf.subarray(i, i + chunk));
+  }
+  return { data: btoa(binary), mimeType };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -19,18 +42,7 @@ serve(async (req) => {
     const { imageUrl, companyName, segment, keyIndex } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
-    // Coleta todas as chaves disponíveis: LOVABLE_API_KEY, LOVABLE_API_KEY_2 ... _10
-    const keys: string[] = [];
-    const primary = Deno.env.get("LOVABLE_API_KEY");
-    if (primary) keys.push(primary);
-    for (let i = 2; i <= 10; i++) {
-      const k = Deno.env.get(`LOVABLE_API_KEY_${i}`);
-      if (k) keys.push(k);
-    }
-    if (keys.length === 0) return respond(false, { error: "LOVABLE_API_KEY not configured" });
-    const LOVABLE_API_KEY = keys[(keyIndex ?? 0) % keys.length];
-
-    const contextInfo = companyName || segment
+    const contextInfo = (companyName || segment)
       ? `\n\nCONTEXTO DA VISITA:
 - Empresa: ${companyName || 'Não informado'}
 - Segmento: ${segment || 'Não informado'}
@@ -47,108 +59,116 @@ Analise a imagem e verifique TODOS os seguintes critérios:
 2. EMPRESÁRIO: A foto mostra pessoas (agente com empresário) em contexto profissional/reunião?
 3. INTERIOR: A foto foi tirada dentro de um estabelecimento comercial (loja, escritório, oficina, etc.)?
 4. FUNDO VÁLIDO: O fundo da imagem NÃO é uma parede lisa/branca sem informação. Deve haver elementos visuais que identifiquem o ambiente (produtos, equipamentos, decoração comercial, estantes, balcão, etc.). Uma parede lisa sem nenhum elemento contextual = fundo inválido.
-5. CONTEXTO DO SEGMENTO: Os elementos visuais da foto são compatíveis com o segmento da empresa? Exemplos:
-   - Farmácia → medicamentos, prateleiras de remédios, balcão de atendimento
-   - Loja de roupas → araras, manequins, roupas expostas
-   - Academia → aparelhos de musculação, tatames, pesos
-   - Restaurante → mesas, cozinha, alimentos
-   - Oficina mecânica → ferramentas, veículos, peças
-   Se o segmento não foi informado, marque como true se houver elementos comerciais visíveis.
+5. CONTEXTO DO SEGMENTO: Os elementos visuais da foto são compatíveis com o segmento da empresa?
 ${contextInfo}
 
 A foto é APROVADA se atender pelo menos 1 dos critérios (fachada, empresário ou interior) E o fundo for válido E o contexto do segmento for compatível.
 
-Responda EXATAMENTE neste formato JSON:
+Responda APENAS com um JSON válido neste formato exato:
 {
-  "aprovada": true ou false,
+  "aprovada": true,
   "criterios": {
-    "fachada": true ou false,
-    "empresario": true ou false,
-    "interior": true ou false,
-    "fundo_valido": true ou false,
-    "contexto_segmento": true ou false
+    "fachada": true,
+    "empresario": false,
+    "interior": true,
+    "fundo_valido": true,
+    "contexto_segmento": true
   },
-  "justificativa": "Explicação breve do que foi identificado na foto e por que foi aprovada ou reprovada"
+  "justificativa": "Explicação breve"
 }`;
+
+    const geminiKeys = collectGeminiKeys();
+
+    // ===== Tenta Gemini direto (rotacionando entre as chaves fornecidas) =====
+    if (geminiKeys.length > 0) {
+      const idx = ((keyIndex ?? 0) % geminiKeys.length + geminiKeys.length) % geminiKeys.length;
+      const apiKey = geminiKeys[idx];
+
+      let imagePart: { inline_data: { mime_type: string; data: string } };
+      try {
+        const { data, mimeType } = await fetchImageAsBase64(imageUrl);
+        imagePart = { inline_data: { mime_type: mimeType, data } };
+      } catch (e) {
+        return respond(false, { error: "image_fetch", message: e instanceof Error ? e.message : "Falha ao baixar imagem" });
+      }
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{
+            role: "user",
+            parts: [
+              { text: `Analise esta foto de visita do agente à empresa "${companyName || 'N/A'}" (segmento: ${segment || 'N/A'}). Responda apenas com o JSON solicitado.` },
+              imagePart,
+            ],
+          }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.2,
+          },
+        }),
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        console.error("Gemini error:", resp.status, text);
+        if (resp.status === 429) {
+          return respond(false, { error: "rate_limit", message: "Rate limit excedido nesta chave Gemini." });
+        }
+        return respond(false, { error: "ai_error", message: `Gemini ${resp.status}` });
+      }
+
+      const data = await resp.json();
+      const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).filter(Boolean).join("") || "";
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch {
+        const m = text.match(/\{[\s\S]*\}/);
+        result = m ? JSON.parse(m[0]) : {
+          aprovada: false,
+          criterios: { fachada: false, empresario: false, interior: false, fundo_valido: false, contexto_segmento: false },
+          justificativa: "Não foi possível analisar a imagem.",
+        };
+      }
+      return respond(true, result);
+    }
+
+    // ===== Fallback: Lovable AI Gateway =====
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) return respond(false, { error: "no_keys", message: "Nenhuma chave Gemini ou Lovable configurada" });
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: `Analise esta foto de visita do agente à empresa "${companyName || 'N/A'}" (segmento: ${segment || 'N/A'}):` },
-              { type: "image_url", image_url: { url: imageUrl } },
-            ],
-          },
+          { role: "user", content: [
+            { type: "text", text: `Analise esta foto da empresa "${companyName || 'N/A'}":` },
+            { type: "image_url", image_url: { url: imageUrl } },
+          ] },
         ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "photo_analysis",
-              description: "Resultado da análise da foto de visita",
-              parameters: {
-                type: "object",
-                properties: {
-                  aprovada: { type: "boolean", description: "Se a foto atende os critérios de validação" },
-                  criterios: {
-                    type: "object",
-                    properties: {
-                      fachada: { type: "boolean" },
-                      empresario: { type: "boolean" },
-                      interior: { type: "boolean" },
-                      fundo_valido: { type: "boolean", description: "Fundo não é parede lisa, tem elementos visuais" },
-                      contexto_segmento: { type: "boolean", description: "Elementos visuais compatíveis com o segmento" },
-                    },
-                    required: ["fachada", "empresario", "interior", "fundo_valido", "contexto_segmento"],
-                  },
-                  justificativa: { type: "string", description: "Explicação breve" },
-                },
-                required: ["aprovada", "criterios", "justificativa"],
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "photo_analysis" } },
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return respond(false, { error: "rate_limit", message: "Rate limit excedido. Tente novamente em alguns segundos." });
-      }
-      if (response.status === 402) {
-        return respond(false, { error: "credits_exhausted", message: "Créditos insuficientes." });
-      }
-      const text = await response.text();
-      console.error("AI error:", response.status, text);
-      return respond(false, { error: "ai_error", message: "Erro na análise da IA" });
+      if (response.status === 429) return respond(false, { error: "rate_limit" });
+      if (response.status === 402) return respond(false, { error: "credits_exhausted" });
+      return respond(false, { error: "ai_error" });
     }
-
     const data = await response.json();
-    
-    let result;
-    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (toolCall?.function?.arguments) {
-      result = JSON.parse(toolCall.function.arguments);
-    } else {
-      const content = data.choices?.[0]?.message?.content || "";
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        result = { aprovada: false, criterios: { fachada: false, empresario: false, interior: false, fundo_valido: false, contexto_segmento: false }, justificativa: "Não foi possível analisar a imagem." };
-      }
-    }
-
+    const content = data.choices?.[0]?.message?.content || "";
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    const result = jsonMatch ? JSON.parse(jsonMatch[0]) : {
+      aprovada: false,
+      criterios: { fachada: false, empresario: false, interior: false, fundo_valido: false, contexto_segmento: false },
+      justificativa: "Não foi possível analisar.",
+    };
     return respond(true, result);
   } catch (e) {
     console.error("Error:", e);
