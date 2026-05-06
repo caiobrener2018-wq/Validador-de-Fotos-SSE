@@ -17,6 +17,7 @@ export interface AgentPhoto {
   error?: string;
   duplicate?: boolean;
   duplicateOf?: { agent: string; company: string; row: number };
+  imageHash?: string;
 }
 
 export interface AgentData {
@@ -29,4 +30,4 @@ export interface AgentData {
   photos: AgentPhoto[];
 }
 
-export type FilterType = 'all' | 'approved' | 'inconsistent';
+export type FilterType = 'all' | 'approved' | 'inconsistent' | 'duplicate' | 'no_photos';
