@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 serve(async (req) => {
@@ -11,7 +12,14 @@ serve(async (req) => {
   }
 
   try {
-    const { url } = await req.json();
+    let url: string | null = null;
+    if (req.method === "GET") {
+      url = new URL(req.url).searchParams.get("url");
+    } else {
+      const body = await req.json().catch(() => ({}));
+      url = body.url;
+    }
+
     if (!url) {
       return new Response(JSON.stringify({ error: "URL required" }), {
         status: 400,
@@ -19,7 +27,9 @@ serve(async (req) => {
       });
     }
 
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SebraeBot/1.0)" },
+    });
     if (!response.ok) {
       return new Response(JSON.stringify({ error: `Failed to fetch: ${response.status}` }), {
         status: 502,
@@ -27,18 +37,18 @@ serve(async (req) => {
       });
     }
 
-    const blob = await response.blob();
-    const arrayBuffer = await blob.arrayBuffer();
+    const arrayBuffer = await response.arrayBuffer();
+    const contentType = response.headers.get("content-type") || "image/jpeg";
 
     return new Response(arrayBuffer, {
       headers: {
         ...corsHeaders,
-        "Content-Type": blob.type || "image/jpeg",
-        "Content-Length": String(arrayBuffer.byteLength),
+        "Content-Type": contentType,
+        "Cache-Control": "public, max-age=3600",
       },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
