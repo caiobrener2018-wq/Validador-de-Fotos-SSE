@@ -75,11 +75,10 @@ export function AgentCard({ agent }: Props) {
                 className="w-20 h-20 rounded overflow-hidden bg-muted flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
                 onClick={() => setSelectedPhoto(photo.url)}
               >
-                <img
+                <ProxyImg
                   src={photo.url}
                   alt={`Foto ${idx + 1}`}
                   className="w-full h-full object-cover"
-                  onError={(e) => { (e.target as HTMLImageElement).src = '/placeholder.svg'; }}
                 />
               </div>
               <div className="flex-1 min-w-0">
