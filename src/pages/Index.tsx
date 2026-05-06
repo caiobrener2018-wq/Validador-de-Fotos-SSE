@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { AgentData, FilterType } from '@/types/analysis';
 import { parseExcelFile } from '@/lib/parseExcel';
 import { exportResultsToExcel } from '@/lib/exportResults';
@@ -15,39 +15,37 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet } from 'lucide-react';
 
+// Quantas fotos cada worker (slot/key) processa em paralelo
+const PER_WORKER_CONCURRENCY = 2;
+
+async function analyzeOnce(
+  photo: { url: string; companyName: string; segment: string; keyIndex: number }
+): Promise<any> {
+  const { data } = await supabase.functions.invoke('analyze-photo', {
+    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, keyIndex: photo.keyIndex },
+  });
+  if (data?.ok === false && data.error === 'rate_limit') {
+    const err: any = new Error('rate_limit'); err.rateLimit = true; throw err;
+  }
+  if (data?.ok === false) throw new Error(data.message || data.error || 'Erro na análise');
+  const { ok, ...result } = data || {};
+  return result;
+}
+
 async function analyzeWithRetry(
   photo: { url: string; companyName: string; segment: string; keyIndex: number },
-  maxRetries = 6
+  maxRetries = 5
 ): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-
     try {
-      const { data } = await supabase.functions.invoke('analyze-photo', {
-        body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, keyIndex: photo.keyIndex },
-      });
-      clearTimeout(timeout);
-
-      if (data?.ok === false && data.error === 'rate_limit') {
-        if (attempt < maxRetries) {
-          await new Promise(r => setTimeout(r, 2000 * Math.pow(1.8, attempt)));
-          continue;
-        }
-        throw new Error('Rate limit excedido');
-      }
-      if (data?.ok === false) throw new Error(data.message || 'Erro na análise');
-
-      const { ok, ...result } = data || {};
-      return result;
+      return await analyzeOnce(photo);
     } catch (err: any) {
-      clearTimeout(timeout);
       if (attempt >= maxRetries) throw err;
-      await new Promise(r => setTimeout(r, 2000 * Math.pow(1.8, attempt)));
+      const base = err?.rateLimit ? 2500 : 1500;
+      await new Promise(r => setTimeout(r, base * Math.pow(1.7, attempt)));
     }
   }
 }
-
 
 const Index = () => {
   const [agents, setAgents] = useState<AgentData[]>([]);
@@ -56,9 +54,11 @@ const Index = () => {
   const [progress, setProgress] = useState(0);
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
-  const [companyFilter, setCompanyFilter] = useState<string>('all');
+  const [agencyFilter, setAgencyFilter] = useState<string>('all');
   const [keyCount, setKeyCount] = useState<number>(1);
   const { toast } = useToast();
+  const agentsRef = useRef<AgentData[]>([]);
+  agentsRef.current = agents;
 
   useEffect(() => {
     supabase.functions.invoke('get-key-count').then(({ data }) => {
@@ -67,7 +67,7 @@ const Index = () => {
   }, []);
 
   const uniqueAgentNames = useMemo(() => [...new Set(agents.map(a => a.name))].sort(), [agents]);
-  const uniqueCompanies = useMemo(() => [...new Set(agents.map(a => a.companyName).filter(Boolean))].sort(), [agents]);
+  const uniqueAgencies = useMemo(() => [...new Set(agents.map(a => a.agency).filter(Boolean))].sort(), [agents]);
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     setIsLoadingFile(true);
@@ -87,72 +87,120 @@ const Index = () => {
     setIsAnalyzing(true);
     setProgress(0);
 
+    const updated = [...agentsRef.current];
+    const targetSet = new Set(targetAgents);
+
+    // Build task queue
     const tasks: { agentIdx: number; photoIdx: number }[] = [];
-    targetAgents.forEach((agent) => {
-      const globalIdx = agents.indexOf(agent);
+    updated.forEach((agent, aIdx) => {
+      if (!targetSet.has(agent)) return;
       agent.photos.forEach((photo, pIdx) => {
-        if (photo.duplicate) return; // skip duplicates
-        if (!onlyErrors || photo.status === 'error') {
-          tasks.push({ agentIdx: globalIdx, photoIdx: pIdx });
-        }
+        if (photo.duplicate) return;
+        if (onlyErrors && photo.status !== 'error') return;
+        tasks.push({ agentIdx: aIdx, photoIdx: pIdx });
       });
     });
 
-    let done = 0;
     const total = tasks.length;
-    const updated = [...agents];
-    const concurrency = Math.max(1, keyCount);
-    const delayMs = keyCount > 1 ? 500 : 4000;
+    if (total === 0) {
+      setIsAnalyzing(false);
+      return;
+    }
 
-    for (let i = 0; i < tasks.length; i += concurrency) {
-      const batch = tasks.slice(i, i + concurrency);
+    // Mark all as analyzing upfront
+    tasks.forEach(t => { updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing'; });
+    setAgents([...updated]);
 
-      batch.forEach(t => {
-        updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing';
-      });
-      setAgents([...updated]);
+    // Hash map for AI-based dedup (built incrementally)
+    const hashMap = new Map<string, { agent: string; company: string; row: number }>();
+    // Pre-populate from already-done photos with hash
+    updated.forEach(a => a.photos.forEach(p => {
+      if (p.imageHash && p.status === 'done') {
+        if (!hashMap.has(p.imageHash)) {
+          hashMap.set(p.imageHash, { agent: a.name, company: a.companyName, row: a.excelRow });
+        }
+      }
+    }));
 
-      const promises = batch.map(async (t, bIdx) => {
+    let done = 0;
+    let cursor = 0;
+    const slots = Math.max(1, keyCount);
+
+    // Each worker pulls tasks from the shared queue independently.
+    // Within a worker we run PER_WORKER_CONCURRENCY tasks in parallel.
+    const worker = async (slotIndex: number) => {
+      const inflight = new Set<Promise<void>>();
+
+      const launch = async (task: { agentIdx: number; photoIdx: number }) => {
+        const agent = updated[task.agentIdx];
+        const photo = agent.photos[task.photoIdx];
         try {
-          const agent = updated[t.agentIdx];
           const result = await analyzeWithRetry({
-            url: agent.photos[t.photoIdx].url,
+            url: photo.url,
             companyName: agent.companyName,
             segment: agent.segment,
-            keyIndex: (i + bIdx) % concurrency,
+            keyIndex: slotIndex,
           });
-          updated[t.agentIdx].photos[t.photoIdx].analysis = result;
-          updated[t.agentIdx].photos[t.photoIdx].status = 'done';
+
+          // AI-based dedup via image hash
+          const hash = result.imageHash as string | undefined;
+          if (hash) {
+            photo.imageHash = hash;
+            const existing = hashMap.get(hash);
+            if (existing && !(existing.agent === agent.name && existing.row === agent.excelRow && agent.photos.indexOf(photo) === task.photoIdx)) {
+              photo.status = 'duplicate';
+              photo.duplicate = true;
+              photo.duplicateOf = existing;
+            } else {
+              hashMap.set(hash, { agent: agent.name, company: agent.companyName, row: agent.excelRow });
+              const { imageHash, ...analysis } = result;
+              photo.analysis = analysis;
+              photo.status = 'done';
+            }
+          } else {
+            photo.analysis = result;
+            photo.status = 'done';
+          }
         } catch (err: any) {
-          updated[t.agentIdx].photos[t.photoIdx].status = 'error';
-          updated[t.agentIdx].photos[t.photoIdx].error = err?.message || 'Erro na análise';
+          photo.status = 'error';
+          photo.error = err?.message || 'Erro na análise';
         }
         done++;
         setProgress(Math.round((done / total) * 100));
         setAgents([...updated]);
-      });
+      };
 
-      await Promise.all(promises);
-
-      if (i + concurrency < tasks.length) {
-        await new Promise(r => setTimeout(r, delayMs));
+      while (true) {
+        // Fill up inflight set
+        while (inflight.size < PER_WORKER_CONCURRENCY && cursor < tasks.length) {
+          const task = tasks[cursor++];
+          const p = launch(task).finally(() => { inflight.delete(p); });
+          inflight.add(p);
+        }
+        if (inflight.size === 0) break;
+        await Promise.race(inflight);
       }
-    }
+    };
+
+    const workers = Array.from({ length: slots }, (_, i) => worker(i));
+    await Promise.all(workers);
 
     setIsAnalyzing(false);
     toast({ title: 'Análise concluída!', description: `${done} fotos processadas` });
-  }, [agents, toast, keyCount]);
+  }, [toast, keyCount]);
 
   const filteredAgents = useMemo(() => agents.filter(agent => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
-    if (companyFilter !== 'all' && agent.companyName !== companyFilter) return false;
+    if (agencyFilter !== 'all' && agent.agency !== agencyFilter) return false;
     if (filter === 'all') return true;
     const noPhotos = agent.photos.length === 0;
+    if (filter === 'no_photos') return noPhotos;
+    if (filter === 'duplicate') return agent.photos.some(p => p.status === 'duplicate');
     const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
     if (!noPhotos && !allDone) return true;
     const hasInconsistency = noPhotos || agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
     return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
-  }), [agents, agentFilter, companyFilter, filter]);
+  }), [agents, agentFilter, agencyFilter, filter]);
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const hasResults = agents.some(a => a.photos.some(p => p.status === 'done'));
@@ -193,7 +241,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Analisando fotos...</span>
+                  <span>Analisando fotos... ({keyCount} workers × {PER_WORKER_CONCURRENCY} paralelas)</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />
@@ -244,13 +292,13 @@ const Index = () => {
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+              <Select value={agencyFilter} onValueChange={setAgencyFilter}>
                 <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Empresa" />
+                  <SelectValue placeholder="Agência" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todas as empresas</SelectItem>
-                  {uniqueCompanies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  <SelectItem value="all">Todas as agências</SelectItem>
+                  {uniqueAgencies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
 
@@ -264,11 +312,17 @@ const Index = () => {
                 </SelectContent>
               </Select>
 
-              <div className="flex items-center gap-1 ml-auto">
+              <div className="flex items-center gap-1 ml-auto flex-wrap">
                 <Filter className="h-4 w-4 text-muted-foreground" />
-                {(['all', 'approved', 'inconsistent'] as FilterType[]).map(f => (
-                  <Button key={f} variant={filter === f ? 'default' : 'ghost'} size="sm" onClick={() => setFilter(f)}>
-                    {f === 'all' ? 'Todas' : f === 'approved' ? 'Aprovadas' : 'Inconsistências'}
+                {([
+                  { v: 'all', label: 'Todas' },
+                  { v: 'approved', label: 'Aprovadas' },
+                  { v: 'inconsistent', label: 'Inconsistências' },
+                  { v: 'duplicate', label: 'Duplicadas' },
+                  { v: 'no_photos', label: 'Sem fotos' },
+                ] as { v: FilterType; label: string }[]).map(f => (
+                  <Button key={f.v} variant={filter === f.v ? 'default' : 'ghost'} size="sm" onClick={() => setFilter(f.v)}>
+                    {f.label}
                   </Button>
                 ))}
               </div>
