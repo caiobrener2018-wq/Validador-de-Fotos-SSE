@@ -139,7 +139,7 @@ export function AgentCard({ agent }: Props) {
       <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
         <DialogContent className="max-w-3xl p-2">
           {selectedPhoto && (
-            <img src={selectedPhoto} alt="Foto ampliada" className="w-full h-auto rounded" />
+            <ProxyImg src={selectedPhoto} alt="Foto ampliada" className="w-full h-auto rounded" />
           )}
         </DialogContent>
       </Dialog>
