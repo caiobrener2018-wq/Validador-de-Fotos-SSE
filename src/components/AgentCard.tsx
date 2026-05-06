@@ -9,6 +9,35 @@ interface Props {
   agent: AgentData;
 }
 
+const SUPABASE_URL = "https://kcuuymecihfjgqmvybzk.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtjdXV5bWVjaWhmamdxbXZ5YnprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NTY2MDcsImV4cCI6MjA5MTMzMjYwN30.YMF3BIuGkfVRna2B02OlpOv64h9CCkqma7ZqQS41fBw";
+
+function ProxyImg({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  const [errored, setErrored] = useState(false);
+  const [useProxy, setUseProxy] = useState(false);
+  if (errored) return <img src="/placeholder.svg" alt={alt} className={className} />;
+  if (useProxy) {
+    return (
+      <img
+        src={`${SUPABASE_URL}/functions/v1/proxy-image?url=${encodeURIComponent(src)}&apikey=${SUPABASE_ANON}`}
+        alt={alt}
+        className={className}
+        onError={() => setErrored(true)}
+      />
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      referrerPolicy="no-referrer"
+      crossOrigin="anonymous"
+      onError={() => setUseProxy(true)}
+    />
+  );
+}
+
 export function AgentCard({ agent }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const noPhotos = agent.photos.length === 0;
