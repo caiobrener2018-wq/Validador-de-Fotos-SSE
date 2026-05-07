@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
-import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet } from 'lucide-react';
+import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
 // Quantas fotos cada worker (slot/key) processa em paralelo
 const PER_WORKER_CONCURRENCY = 2;
@@ -34,15 +34,20 @@ async function analyzeOnce(
 
 async function analyzeWithRetry(
   photo: { url: string; companyName: string; segment: string; keyIndex: number },
-  maxRetries = 5
+  shouldStop: () => boolean,
+  waitIfPaused: () => Promise<void>,
+  maxRetries = 8
 ): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    await waitIfPaused();
+    if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
     try {
       return await analyzeOnce(photo);
     } catch (err: any) {
+      if (err?.cancelled) throw err;
       if (attempt >= maxRetries) throw err;
-      const base = err?.rateLimit ? 2500 : 1500;
-      await new Promise(r => setTimeout(r, base * Math.pow(1.7, attempt)));
+      const base = err?.rateLimit ? 3000 : 1500;
+      await new Promise(r => setTimeout(r, base * Math.pow(1.6, attempt)));
     }
   }
 }
@@ -59,6 +64,9 @@ const Index = () => {
   const { toast } = useToast();
   const agentsRef = useRef<AgentData[]>([]);
   agentsRef.current = agents;
+  const pausedRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     supabase.functions.invoke('get-key-count').then(({ data }) => {
@@ -84,8 +92,18 @@ const Index = () => {
   }, [toast]);
 
   const runAnalysis = useCallback(async (targetAgents: AgentData[], onlyErrors = false) => {
+    pausedRef.current = false;
+    cancelledRef.current = false;
+    setIsPaused(false);
     setIsAnalyzing(true);
     setProgress(0);
+
+    const shouldStop = () => cancelledRef.current;
+    const waitIfPaused = async () => {
+      while (pausedRef.current && !cancelledRef.current) {
+        await new Promise(r => setTimeout(r, 250));
+      }
+    };
 
     // Clone top-level array; agent objects are cloned on update for memo to work
     const updated = agentsRef.current.map(a => a);
@@ -157,7 +175,7 @@ const Index = () => {
             companyName: agent.companyName,
             segment: agent.segment,
             keyIndex: slotIndex,
-          });
+          }, shouldStop, waitIfPaused);
 
           // AI-based dedup via image hash
           const hash = result.imageHash as string | undefined;
@@ -179,10 +197,13 @@ const Index = () => {
             photo.status = 'done';
           }
         } catch (err: any) {
-          photo.status = 'error';
-          photo.error = err?.message || 'Erro na análise';
+          if (err?.cancelled) {
+            photo.status = 'pending';
+          } else {
+            photo.status = 'error';
+            photo.error = err?.message || 'Erro na análise';
+          }
         }
-        // Replace agent reference so memoized AgentCard re-renders only this card
         updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
         done++;
         setProgress(Math.round((done / total) * 100));
@@ -190,8 +211,7 @@ const Index = () => {
       };
 
       while (true) {
-        // Fill up inflight set
-        while (inflight.size < PER_WORKER_CONCURRENCY && cursor < tasks.length) {
+        while (inflight.size < PER_WORKER_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
           const task = tasks[cursor++];
           const p = launch(task).finally(() => { inflight.delete(p); });
           inflight.add(p);
@@ -206,9 +226,27 @@ const Index = () => {
     clearInterval(flushTimer);
     flush();
 
+    const wasCancelled = cancelledRef.current;
     setIsAnalyzing(false);
-    toast({ title: 'Análise concluída!', description: `${done} fotos processadas` });
+    setIsPaused(false);
+    pausedRef.current = false;
+    cancelledRef.current = false;
+    toast({
+      title: wasCancelled ? 'Análise cancelada' : 'Análise concluída!',
+      description: `${done} fotos processadas`,
+    });
   }, [toast, keyCount]);
+
+  const handlePauseToggle = useCallback(() => {
+    pausedRef.current = !pausedRef.current;
+    setIsPaused(pausedRef.current);
+  }, []);
+
+  const handleCancel = useCallback(() => {
+    cancelledRef.current = true;
+    pausedRef.current = false;
+    setIsPaused(false);
+  }, []);
 
   const filteredAgents = useMemo(() => agents.filter(agent => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
@@ -262,7 +300,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>Analisando fotos... ({keyCount} workers × {PER_WORKER_CONCURRENCY} paralelas)</span>
+                  <span>{isPaused ? 'Pausado' : `Analisando fotos... (${keyCount} workers × ${PER_WORKER_CONCURRENCY} paralelas)`}</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />
@@ -279,6 +317,16 @@ const Index = () => {
                 <Button variant="outline" onClick={() => runAnalysis(agents, true)}>
                   <RefreshCw className="h-4 w-4 mr-2" /> Reanalisar Falhas
                 </Button>
+              )}
+              {isAnalyzing && (
+                <>
+                  <Button variant="outline" onClick={handlePauseToggle}>
+                    {isPaused ? (<><Play className="h-4 w-4 mr-2" /> Retomar</>) : (<><Pause className="h-4 w-4 mr-2" /> Pausar</>)}
+                  </Button>
+                  <Button variant="destructive" onClick={handleCancel}>
+                    <X className="h-4 w-4 mr-2" /> Cancelar
+                  </Button>
+                </>
               )}
 
               {agents.length > 0 && (
