@@ -15,8 +15,8 @@ interface ExportDialogProps {
 }
 
 export function ExportDialog({ open, onOpenChange, agents }: ExportDialogProps) {
-  const uniqueCompanies = [...new Set(agents.map(a => a.companyName || 'Sem Empresa'))].sort();
-  const [selected, setSelected] = useState<Set<string>>(new Set(uniqueCompanies));
+  const uniqueAgencies = [...new Set(agents.map(a => a.agency || 'Sem Agência'))].sort();
+  const [selected, setSelected] = useState<Set<string>>(new Set(uniqueAgencies));
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('');
@@ -31,11 +31,11 @@ export function ExportDialog({ open, onOpenChange, agents }: ExportDialogProps) 
 
   const toggleAll = () => {
     setSelected(prev =>
-      prev.size === uniqueCompanies.length ? new Set() : new Set(uniqueCompanies)
+      prev.size === uniqueAgencies.length ? new Set() : new Set(uniqueAgencies)
     );
   };
 
-  const selectedAgents = agents.filter(a => selected.has(a.companyName || 'Sem Empresa'));
+  const selectedAgents = agents.filter(a => selected.has(a.agency || 'Sem Agência'));
 
   const handleExportExcel = async () => {
     if (selectedAgents.length === 0) return;
@@ -58,7 +58,7 @@ export function ExportDialog({ open, onOpenChange, agents }: ExportDialogProps) 
   };
 
   const handleOpenChange = (val: boolean) => {
-    if (val) setSelected(new Set(uniqueCompanies));
+    if (val) setSelected(new Set(uniqueAgencies));
     onOpenChange(val);
   };
 
