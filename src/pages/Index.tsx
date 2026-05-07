@@ -87,8 +87,25 @@ const Index = () => {
     setIsAnalyzing(true);
     setProgress(0);
 
-    const updated = [...agentsRef.current];
+    // Clone top-level array; agent objects are cloned on update for memo to work
+    const updated = agentsRef.current.map(a => a);
     const targetSet = new Set(targetAgents);
+
+    // Throttle React updates to avoid freezing UI with thousands of photos
+    let dirty = false;
+    let lastFlush = 0;
+    const FLUSH_INTERVAL = 400;
+    const flush = () => {
+      dirty = false;
+      lastFlush = Date.now();
+      setAgents(updated.slice());
+    };
+    const scheduleFlush = () => {
+      dirty = true;
+      const now = Date.now();
+      if (now - lastFlush >= FLUSH_INTERVAL) flush();
+    };
+    const flushTimer = setInterval(() => { if (dirty) flush(); }, FLUSH_INTERVAL);
 
     // Build task queue
     const tasks: { agentIdx: number; photoIdx: number }[] = [];
