@@ -37,9 +37,10 @@ export async function exportImagesToZip(agents: AgentData[], onProgress?: (pct: 
   const allPhotos: { folder: string; url: string; name: string }[] = [];
 
   for (const agent of agents) {
+    const agencyFolder = sanitize(agent.agency || 'Sem Agência');
     const companyFolder = sanitize(agent.companyName || 'Sem Empresa');
     const subFolder = sanitize(`${agent.name} (Linha ${agent.excelRow})`);
-    const folder = `${companyFolder}/${subFolder}`;
+    const folder = `${agencyFolder}/${companyFolder}/${subFolder}`;
     agent.photos.forEach((photo, idx) => {
       allPhotos.push({ folder, url: photo.url, name: `foto_${idx + 1}.jpg` });
     });
@@ -48,21 +49,29 @@ export async function exportImagesToZip(agents: AgentData[], onProgress?: (pct: 
   if (allPhotos.length === 0) return;
 
   let done = 0;
-  for (const item of allPhotos) {
-    const blob = await fetchImageViaProxy(item.url);
-    if (blob && blob.size > 0) {
-      zip.file(`${item.folder}/${item.name}`, blob);
+  const CONCURRENCY = 8;
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < allPhotos.length) {
+      const item = allPhotos[cursor++];
+      const blob = await fetchImageViaProxy(item.url);
+      if (blob && blob.size > 0) {
+        zip.file(`${item.folder}/${item.name}`, blob);
+      }
+      done++;
+      onProgress?.(Math.round((done / allPhotos.length) * 100));
     }
-    done++;
-    onProgress?.(Math.round((done / allPhotos.length) * 100));
-  }
+  };
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-  const content = await zip.generateAsync({ type: 'blob' });
+  const content = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
   const url = URL.createObjectURL(content);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'fotos_visitas.zip';
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   URL.revokeObjectURL(url);
 }
 
