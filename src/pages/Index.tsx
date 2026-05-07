@@ -303,7 +303,7 @@ const Index = () => {
                         <ImageDown className="h-4 w-4 mr-2" /> Imagens Filtradas (ZIP)
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setExportDialogOpen(true)}>
-                        <Download className="h-4 w-4 mr-2" /> Selecionar Empresas...
+                        <Download className="h-4 w-4 mr-2" /> Selecionar Agências...
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
