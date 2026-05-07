@@ -34,15 +34,20 @@ async function analyzeOnce(
 
 async function analyzeWithRetry(
   photo: { url: string; companyName: string; segment: string; keyIndex: number },
-  maxRetries = 5
+  shouldStop: () => boolean,
+  waitIfPaused: () => Promise<void>,
+  maxRetries = 8
 ): Promise<any> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    await waitIfPaused();
+    if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
     try {
       return await analyzeOnce(photo);
     } catch (err: any) {
+      if (err?.cancelled) throw err;
       if (attempt >= maxRetries) throw err;
-      const base = err?.rateLimit ? 2500 : 1500;
-      await new Promise(r => setTimeout(r, base * Math.pow(1.7, attempt)));
+      const base = err?.rateLimit ? 3000 : 1500;
+      await new Promise(r => setTimeout(r, base * Math.pow(1.6, attempt)));
     }
   }
 }
