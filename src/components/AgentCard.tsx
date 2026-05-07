@@ -40,7 +40,7 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
   );
 }
 
-export function AgentCard({ agent }: Props) {
+function AgentCardImpl({ agent }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const noPhotos = agent.photos.length === 0;
   const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
