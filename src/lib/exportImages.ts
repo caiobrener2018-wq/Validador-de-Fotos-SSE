@@ -1,24 +1,31 @@
 import JSZip from 'jszip';
 import { AgentData } from '@/types/analysis';
-import { supabase } from '@/integrations/supabase/client';
+
+const SUPABASE_URL = "https://kcuuymecihfjgqmvybzk.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtjdXV5bWVjaWhmamdxbXZ5YnprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NTY2MDcsImV4cCI6MjA5MTMzMjYwN30.YMF3BIuGkfVRna2B02OlpOv64h9CCkqma7ZqQS41fBw";
 
 async function fetchImageViaProxy(url: string): Promise<Blob | null> {
+  // Try direct fetch first (faster, no edge function overhead)
   try {
-    const { data, error } = await supabase.functions.invoke('proxy-image', {
-      body: { url },
-    });
-    if (error) throw error;
-    if (data instanceof Blob && data.size > 0) return data;
-    return null;
-  } catch {
-    try {
-      const response = await fetch(url);
-      if (response.ok) return await response.blob();
-    } catch {
-      // skip
+    const r = await fetch(url, { mode: 'cors', referrerPolicy: 'no-referrer' });
+    if (r.ok) {
+      const b = await r.blob();
+      if (b.size > 0) return b;
     }
-    return null;
+  } catch {
+    // fallthrough to proxy
   }
+  try {
+    const proxyUrl = `${SUPABASE_URL}/functions/v1/proxy-image?url=${encodeURIComponent(url)}&apikey=${SUPABASE_ANON}`;
+    const r = await fetch(proxyUrl);
+    if (r.ok) {
+      const b = await r.blob();
+      if (b.size > 0) return b;
+    }
+  } catch {
+    // skip
+  }
+  return null;
 }
 
 function sanitize(name: string): string {
