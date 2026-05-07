@@ -31,6 +31,8 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
       src={src}
       alt={alt}
       className={className}
+      loading="lazy"
+      decoding="async"
       referrerPolicy="no-referrer"
       crossOrigin="anonymous"
       onError={() => setUseProxy(true)}
