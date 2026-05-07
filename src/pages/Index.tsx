@@ -182,6 +182,8 @@ const Index = () => {
           photo.status = 'error';
           photo.error = err?.message || 'Erro na análise';
         }
+        // Replace agent reference so memoized AgentCard re-renders only this card
+        updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
         done++;
         setProgress(Math.round((done / total) * 100));
         scheduleFlush();
