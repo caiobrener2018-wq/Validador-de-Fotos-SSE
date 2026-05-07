@@ -201,6 +201,8 @@ const Index = () => {
 
     const workers = Array.from({ length: slots }, (_, i) => worker(i));
     await Promise.all(workers);
+    clearInterval(flushTimer);
+    flush();
 
     setIsAnalyzing(false);
     toast({ title: 'Análise concluída!', description: `${done} fotos processadas` });
