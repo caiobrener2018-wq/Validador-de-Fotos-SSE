@@ -212,8 +212,7 @@ const Index = () => {
 
 
       while (true) {
-        // Fill up inflight set
-        while (inflight.size < PER_WORKER_CONCURRENCY && cursor < tasks.length) {
+        while (inflight.size < PER_WORKER_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
           const task = tasks[cursor++];
           const p = launch(task).finally(() => { inflight.delete(p); });
           inflight.add(p);
@@ -228,9 +227,27 @@ const Index = () => {
     clearInterval(flushTimer);
     flush();
 
+    const wasCancelled = cancelledRef.current;
     setIsAnalyzing(false);
-    toast({ title: 'Análise concluída!', description: `${done} fotos processadas` });
+    setIsPaused(false);
+    pausedRef.current = false;
+    cancelledRef.current = false;
+    toast({
+      title: wasCancelled ? 'Análise cancelada' : 'Análise concluída!',
+      description: `${done} fotos processadas`,
+    });
   }, [toast, keyCount]);
+
+  const handlePauseToggle = useCallback(() => {
+    pausedRef.current = !pausedRef.current;
+    setIsPaused(pausedRef.current);
+  }, []);
+
+  const handleCancel = useCallback(() => {
+    cancelledRef.current = true;
+    pausedRef.current = false;
+    setIsPaused(false);
+  }, []);
 
   const filteredAgents = useMemo(() => agents.filter(agent => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
