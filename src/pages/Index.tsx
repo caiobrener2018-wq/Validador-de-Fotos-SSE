@@ -126,7 +126,7 @@ const Index = () => {
 
     // Mark all as analyzing upfront
     tasks.forEach(t => { updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing'; });
-    setAgents([...updated]);
+    setAgents(updated.slice());
 
     // Hash map for AI-based dedup (built incrementally)
     const hashMap = new Map<string, { agent: string; company: string; row: number }>();
