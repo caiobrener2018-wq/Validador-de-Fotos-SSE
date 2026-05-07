@@ -148,3 +148,5 @@ function AgentCardImpl({ agent }: Props) {
     </>
   );
 }
+
+export const AgentCard = memo(AgentCardImpl, (prev, next) => prev.agent === next.agent);
