@@ -318,6 +318,16 @@ const Index = () => {
                   <RefreshCw className="h-4 w-4 mr-2" /> Reanalisar Falhas
                 </Button>
               )}
+              {isAnalyzing && (
+                <>
+                  <Button variant="outline" onClick={handlePauseToggle}>
+                    {isPaused ? (<><Play className="h-4 w-4 mr-2" /> Retomar</>) : (<><Pause className="h-4 w-4 mr-2" /> Pausar</>)}
+                  </Button>
+                  <Button variant="destructive" onClick={handleCancel}>
+                    <X className="h-4 w-4 mr-2" /> Cancelar
+                  </Button>
+                </>
+              )}
 
               {agents.length > 0 && (
                 <>
