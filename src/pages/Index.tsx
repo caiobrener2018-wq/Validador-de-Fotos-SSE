@@ -209,16 +209,6 @@ const Index = () => {
         setProgress(Math.round((done / total) * 100));
         scheduleFlush();
       };
-              {isAnalyzing && (
-                <>
-                  <Button variant="outline" onClick={handlePauseToggle}>
-                    {isPaused ? (<><Play className="h-4 w-4 mr-2" /> Retomar</>) : (<><Pause className="h-4 w-4 mr-2" /> Pausar</>)}
-                  </Button>
-                  <Button variant="destructive" onClick={handleCancel}>
-                    <X className="h-4 w-4 mr-2" /> Cancelar
-                  </Button>
-                </>
-              )}
 
       while (true) {
         while (inflight.size < PER_WORKER_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
