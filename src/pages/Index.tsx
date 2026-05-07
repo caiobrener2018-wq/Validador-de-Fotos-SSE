@@ -92,8 +92,18 @@ const Index = () => {
   }, [toast]);
 
   const runAnalysis = useCallback(async (targetAgents: AgentData[], onlyErrors = false) => {
+    pausedRef.current = false;
+    cancelledRef.current = false;
+    setIsPaused(false);
     setIsAnalyzing(true);
     setProgress(0);
+
+    const shouldStop = () => cancelledRef.current;
+    const waitIfPaused = async () => {
+      while (pausedRef.current && !cancelledRef.current) {
+        await new Promise(r => setTimeout(r, 250));
+      }
+    };
 
     // Clone top-level array; agent objects are cloned on update for memo to work
     const updated = agentsRef.current.map(a => a);
