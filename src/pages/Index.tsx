@@ -87,8 +87,25 @@ const Index = () => {
     setIsAnalyzing(true);
     setProgress(0);
 
-    const updated = [...agentsRef.current];
+    // Clone top-level array; agent objects are cloned on update for memo to work
+    const updated = agentsRef.current.map(a => a);
     const targetSet = new Set(targetAgents);
+
+    // Throttle React updates to avoid freezing UI with thousands of photos
+    let dirty = false;
+    let lastFlush = 0;
+    const FLUSH_INTERVAL = 400;
+    const flush = () => {
+      dirty = false;
+      lastFlush = Date.now();
+      setAgents(updated.slice());
+    };
+    const scheduleFlush = () => {
+      dirty = true;
+      const now = Date.now();
+      if (now - lastFlush >= FLUSH_INTERVAL) flush();
+    };
+    const flushTimer = setInterval(() => { if (dirty) flush(); }, FLUSH_INTERVAL);
 
     // Build task queue
     const tasks: { agentIdx: number; photoIdx: number }[] = [];
@@ -109,7 +126,7 @@ const Index = () => {
 
     // Mark all as analyzing upfront
     tasks.forEach(t => { updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing'; });
-    setAgents([...updated]);
+    setAgents(updated.slice());
 
     // Hash map for AI-based dedup (built incrementally)
     const hashMap = new Map<string, { agent: string; company: string; row: number }>();
@@ -165,9 +182,11 @@ const Index = () => {
           photo.status = 'error';
           photo.error = err?.message || 'Erro na análise';
         }
+        // Replace agent reference so memoized AgentCard re-renders only this card
+        updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
         done++;
         setProgress(Math.round((done / total) * 100));
-        setAgents([...updated]);
+        scheduleFlush();
       };
 
       while (true) {
@@ -184,6 +203,8 @@ const Index = () => {
 
     const workers = Array.from({ length: slots }, (_, i) => worker(i));
     await Promise.all(workers);
+    clearInterval(flushTimer);
+    flush();
 
     setIsAnalyzing(false);
     toast({ title: 'Análise concluída!', description: `${done} fotos processadas` });
@@ -282,7 +303,7 @@ const Index = () => {
                         <ImageDown className="h-4 w-4 mr-2" /> Imagens Filtradas (ZIP)
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => setExportDialogOpen(true)}>
-                        <Download className="h-4 w-4 mr-2" /> Selecionar Empresas...
+                        <Download className="h-4 w-4 mr-2" /> Selecionar Agências...
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

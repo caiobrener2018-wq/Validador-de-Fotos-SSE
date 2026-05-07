@@ -15,8 +15,8 @@ interface ExportDialogProps {
 }
 
 export function ExportDialog({ open, onOpenChange, agents }: ExportDialogProps) {
-  const uniqueCompanies = [...new Set(agents.map(a => a.companyName || 'Sem Empresa'))].sort();
-  const [selected, setSelected] = useState<Set<string>>(new Set(uniqueCompanies));
+  const uniqueAgencies = [...new Set(agents.map(a => a.agency || 'Sem Agência'))].sort();
+  const [selected, setSelected] = useState<Set<string>>(new Set(uniqueAgencies));
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('');
@@ -31,11 +31,11 @@ export function ExportDialog({ open, onOpenChange, agents }: ExportDialogProps) 
 
   const toggleAll = () => {
     setSelected(prev =>
-      prev.size === uniqueCompanies.length ? new Set() : new Set(uniqueCompanies)
+      prev.size === uniqueAgencies.length ? new Set() : new Set(uniqueAgencies)
     );
   };
 
-  const selectedAgents = agents.filter(a => selected.has(a.companyName || 'Sem Empresa'));
+  const selectedAgents = agents.filter(a => selected.has(a.agency || 'Sem Agência'));
 
   const handleExportExcel = async () => {
     if (selectedAgents.length === 0) return;
@@ -58,7 +58,7 @@ export function ExportDialog({ open, onOpenChange, agents }: ExportDialogProps) 
   };
 
   const handleOpenChange = (val: boolean) => {
-    if (val) setSelected(new Set(uniqueCompanies));
+    if (val) setSelected(new Set(uniqueAgencies));
     onOpenChange(val);
   };
 
@@ -66,30 +66,30 @@ export function ExportDialog({ open, onOpenChange, agents }: ExportDialogProps) 
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Exportar por Empresa</DialogTitle>
+          <DialogTitle>Exportar por Agência</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3 max-h-60 overflow-y-auto py-2">
           <div className="flex items-center gap-2 pb-2 border-b">
             <Checkbox
-              checked={selected.size === uniqueCompanies.length}
+              checked={selected.size === uniqueAgencies.length}
               onCheckedChange={toggleAll}
               id="select-all"
             />
             <label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
-              Selecionar todas ({uniqueCompanies.length})
+              Selecionar todas ({uniqueAgencies.length})
             </label>
           </div>
 
-          {uniqueCompanies.map(company => (
-            <div key={company} className="flex items-center gap-2">
+          {uniqueAgencies.map(agency => (
+            <div key={agency} className="flex items-center gap-2">
               <Checkbox
-                checked={selected.has(company)}
-                onCheckedChange={() => toggle(company)}
-                id={`company-${company}`}
+                checked={selected.has(agency)}
+                onCheckedChange={() => toggle(agency)}
+                id={`agency-${agency}`}
               />
-              <label htmlFor={`company-${company}`} className="text-sm cursor-pointer truncate">
-                {company}
+              <label htmlFor={`agency-${agency}`} className="text-sm cursor-pointer truncate">
+                {agency}
               </label>
             </div>
           ))}
