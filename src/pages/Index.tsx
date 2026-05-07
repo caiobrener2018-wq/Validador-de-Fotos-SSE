@@ -184,7 +184,7 @@ const Index = () => {
         }
         done++;
         setProgress(Math.round((done / total) * 100));
-        setAgents([...updated]);
+        scheduleFlush();
       };
 
       while (true) {
