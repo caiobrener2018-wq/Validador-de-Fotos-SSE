@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
-import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet } from 'lucide-react';
+import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
 // Quantas fotos cada worker (slot/key) processa em paralelo
 const PER_WORKER_CONCURRENCY = 2;
