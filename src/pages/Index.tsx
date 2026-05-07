@@ -59,6 +59,9 @@ const Index = () => {
   const { toast } = useToast();
   const agentsRef = useRef<AgentData[]>([]);
   agentsRef.current = agents;
+  const pausedRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     supabase.functions.invoke('get-key-count').then(({ data }) => {
