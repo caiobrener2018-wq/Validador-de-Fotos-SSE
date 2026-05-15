@@ -177,6 +177,14 @@ const Index = () => {
     let done = 0;
     let cursor = 0;
     const inflight = new Set<Promise<void>>();
+    let currentConcurrency = INITIAL_CONCURRENCY;
+    let stableCompletions = 0;
+
+    const onRateLimit = (retryAfterMs: number) => {
+      currentConcurrency = Math.max(MIN_CONCURRENCY, Math.floor(currentConcurrency * 0.65));
+      stableCompletions = 0;
+      console.info(`OpenAI rate limit: reduzindo paralelismo para ${currentConcurrency}. Retry em ${retryAfterMs}ms.`);
+    };
 
     const launch = async (task: { agentIdx: number; photoIdx: number }) => {
       const agent = updated[task.agentIdx];
@@ -186,7 +194,12 @@ const Index = () => {
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
-        }, shouldStop, waitIfPaused);
+        }, shouldStop, waitIfPaused, onRateLimit);
+        stableCompletions++;
+        if (stableCompletions >= 30 && currentConcurrency < MAX_CONCURRENCY) {
+          currentConcurrency++;
+          stableCompletions = 0;
+        }
 
         // AI-based dedup via image hash
         const hash = result.imageHash as string | undefined;
@@ -221,10 +234,10 @@ const Index = () => {
       scheduleFlush();
     };
 
-    // Pool dinâmico: dispara até MAX_CONCURRENCY simultâneas; assim que uma
+    // Pool dinâmico: dispara até currentConcurrency simultâneas; assim que uma
     // termina, outra é iniciada imediatamente — sem esperar lotes.
     while (cursor < tasks.length || inflight.size > 0) {
-      while (inflight.size < MAX_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
+      while (inflight.size < currentConcurrency && cursor < tasks.length && !cancelledRef.current) {
         const task = tasks[cursor++];
         const p = launch(task).finally(() => { inflight.delete(p); });
         inflight.add(p);
