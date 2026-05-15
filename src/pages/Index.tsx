@@ -19,13 +19,16 @@ import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X
 const PER_WORKER_CONCURRENCY = 2;
 
 async function analyzeOnce(
-  photo: { url: string; companyName: string; segment: string; keyIndex: number }
+  photo: { url: string; companyName: string; segment: string }
 ): Promise<any> {
   const { data } = await supabase.functions.invoke('analyze-photo', {
-    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, keyIndex: photo.keyIndex },
+    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment },
   });
   if (data?.ok === false && data.error === 'rate_limit') {
     const err: any = new Error('rate_limit'); err.rateLimit = true; throw err;
+  }
+  if (data?.ok === false && data.error === 'credits_exhausted') {
+    const err: any = new Error('credits_exhausted'); err.credits = true; throw err;
   }
   if (data?.ok === false) throw new Error(data.message || data.error || 'Erro na análise');
   const { ok, ...result } = data || {};
@@ -33,7 +36,7 @@ async function analyzeOnce(
 }
 
 async function analyzeWithRetry(
-  photo: { url: string; companyName: string; segment: string; keyIndex: number },
+  photo: { url: string; companyName: string; segment: string },
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   maxRetries = 8
@@ -174,7 +177,6 @@ const Index = () => {
             url: photo.url,
             companyName: agent.companyName,
             segment: agent.segment,
-            keyIndex: slotIndex,
           }, shouldStop, waitIfPaused);
 
           // AI-based dedup via image hash
