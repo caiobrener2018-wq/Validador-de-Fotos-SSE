@@ -7,6 +7,7 @@ const corsHeaders = {
 
 const OPENAI_MODEL = "gpt-4o-mini";
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_RETRY_AFTER_MS = 3000;
 
 function respond(ok: boolean, data: Record<string, unknown>) {
   return new Response(JSON.stringify({ ok, ...data }), {
@@ -102,6 +103,14 @@ function parseJson(text: string) {
   }
 }
 
+function parseRetryAfterMs(text: string): number {
+  const msMatch = text.match(/try again in\s+(\d+)\s*ms/i);
+  if (msMatch) return Math.max(Number(msMatch[1]), DEFAULT_RETRY_AFTER_MS);
+  const secMatch = text.match(/try again in\s+([\d.]+)\s*s/i);
+  if (secMatch) return Math.max(Math.ceil(Number(secMatch[1]) * 1000), DEFAULT_RETRY_AFTER_MS);
+  return DEFAULT_RETRY_AFTER_MS;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -151,7 +160,7 @@ serve(async (req) => {
         if (text.includes("insufficient_quota")) {
           return respond(false, { error: "credits_exhausted", message: "Créditos OpenAI esgotados." });
         }
-        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI." });
+        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI.", retryAfterMs: parseRetryAfterMs(text) });
       }
       if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados." });
       if (response.status === 400) return respond(false, { error: "bad_request", message: "OpenAI 400: formato de imagem inválido ou não suportado." });
