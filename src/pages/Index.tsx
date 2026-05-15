@@ -159,69 +159,62 @@ const Index = () => {
 
     let done = 0;
     let cursor = 0;
-    const slots = Math.max(1, keyCount);
+    const inflight = new Set<Promise<void>>();
 
-    // Each worker pulls tasks from the shared queue independently.
-    // Within a worker we run PER_WORKER_CONCURRENCY tasks in parallel.
-    const worker = async (slotIndex: number) => {
-      const inflight = new Set<Promise<void>>();
+    const launch = async (task: { agentIdx: number; photoIdx: number }) => {
+      const agent = updated[task.agentIdx];
+      const photo = agent.photos[task.photoIdx];
+      try {
+        const result = await analyzeWithRetry({
+          url: photo.url,
+          companyName: agent.companyName,
+          segment: agent.segment,
+        }, shouldStop, waitIfPaused);
 
-      const launch = async (task: { agentIdx: number; photoIdx: number }) => {
-        const agent = updated[task.agentIdx];
-        const photo = agent.photos[task.photoIdx];
-        try {
-          const result = await analyzeWithRetry({
-            url: photo.url,
-            companyName: agent.companyName,
-            segment: agent.segment,
-          }, shouldStop, waitIfPaused);
-
-          // AI-based dedup via image hash
-          const hash = result.imageHash as string | undefined;
-          if (hash) {
-            photo.imageHash = hash;
-            const existing = hashMap.get(hash);
-            if (existing && !(existing.agent === agent.name && existing.row === agent.excelRow && agent.photos.indexOf(photo) === task.photoIdx)) {
-              photo.status = 'duplicate';
-              photo.duplicate = true;
-              photo.duplicateOf = existing;
-            } else {
-              hashMap.set(hash, { agent: agent.name, company: agent.companyName, row: agent.excelRow });
-              const { imageHash, ...analysis } = result;
-              photo.analysis = analysis;
-              photo.status = 'done';
-            }
+        // AI-based dedup via image hash
+        const hash = result.imageHash as string | undefined;
+        if (hash) {
+          photo.imageHash = hash;
+          const existing = hashMap.get(hash);
+          if (existing && !(existing.agent === agent.name && existing.row === agent.excelRow && agent.photos.indexOf(photo) === task.photoIdx)) {
+            photo.status = 'duplicate';
+            photo.duplicate = true;
+            photo.duplicateOf = existing;
           } else {
-            photo.analysis = result;
+            hashMap.set(hash, { agent: agent.name, company: agent.companyName, row: agent.excelRow });
+            const { imageHash, ...analysis } = result;
+            photo.analysis = analysis;
             photo.status = 'done';
           }
-        } catch (err: any) {
-          if (err?.cancelled) {
-            photo.status = 'pending';
-          } else {
-            photo.status = 'error';
-            photo.error = err?.message || 'Erro na análise';
-          }
+        } else {
+          photo.analysis = result;
+          photo.status = 'done';
         }
-        updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
-        done++;
-        setProgress(Math.round((done / total) * 100));
-        scheduleFlush();
-      };
-
-      while (true) {
-        while (inflight.size < PER_WORKER_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
-          const task = tasks[cursor++];
-          const p = launch(task).finally(() => { inflight.delete(p); });
-          inflight.add(p);
+      } catch (err: any) {
+        if (err?.cancelled) {
+          photo.status = 'pending';
+        } else {
+          photo.status = 'error';
+          photo.error = err?.message || 'Erro na análise';
         }
-        if (inflight.size === 0) break;
-        await Promise.race(inflight);
       }
+      updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
+      done++;
+      setProgress(Math.round((done / total) * 100));
+      scheduleFlush();
     };
 
-    const workers = Array.from({ length: slots }, (_, i) => worker(i));
-    await Promise.all(workers);
+    // Pool dinâmico: dispara até MAX_CONCURRENCY simultâneas; assim que uma
+    // termina, outra é iniciada imediatamente — sem esperar lotes.
+    while (cursor < tasks.length || inflight.size > 0) {
+      while (inflight.size < MAX_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
+        const task = tasks[cursor++];
+        const p = launch(task).finally(() => { inflight.delete(p); });
+        inflight.add(p);
+      }
+      if (inflight.size === 0) break;
+      await Promise.race(inflight);
+    }
     clearInterval(flushTimer);
     flush();
 
@@ -234,7 +227,7 @@ const Index = () => {
       title: wasCancelled ? 'Análise cancelada' : 'Análise concluída!',
       description: `${done} fotos processadas`,
     });
-  }, [toast, keyCount]);
+  }, [toast]);
 
   const handlePauseToggle = useCallback(() => {
     pausedRef.current = !pausedRef.current;
