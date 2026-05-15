@@ -15,8 +15,12 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Quantas fotos cada worker (slot/key) processa em paralelo
-const PER_WORKER_CONCURRENCY = 2;
+// Teto de requisições simultâneas à API do OpenAI.
+// Não é "workers": é apenas um limite de segurança para o navegador não
+// estourar memória/conexões TCP com planilhas enormes. A API do OpenAI
+// (rate limit do tier) é o gargalo real, e o backoff das retentativas se
+// ajusta automaticamente ao ritmo sustentável.
+const MAX_CONCURRENCY = 100;
 
 async function analyzeOnce(
   photo: { url: string; companyName: string; segment: string }
@@ -63,19 +67,12 @@ const Index = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [agencyFilter, setAgencyFilter] = useState<string>('all');
-  const [keyCount, setKeyCount] = useState<number>(1);
   const { toast } = useToast();
   const agentsRef = useRef<AgentData[]>([]);
   agentsRef.current = agents;
   const pausedRef = useRef(false);
   const cancelledRef = useRef(false);
   const [isPaused, setIsPaused] = useState(false);
-
-  useEffect(() => {
-    supabase.functions.invoke('get-key-count').then(({ data }) => {
-      if (data?.count) setKeyCount(data.count);
-    }).catch(() => {});
-  }, []);
 
   const uniqueAgentNames = useMemo(() => [...new Set(agents.map(a => a.name))].sort(), [agents]);
   const uniqueAgencies = useMemo(() => [...new Set(agents.map(a => a.agency).filter(Boolean))].sort(), [agents]);
