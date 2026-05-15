@@ -6,6 +6,7 @@ const corsHeaders = {
 };
 
 const OPENAI_MODEL = "gpt-4o-mini";
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 function respond(ok: boolean, data: Record<string, unknown>) {
   return new Response(JSON.stringify({ ok, ...data }), {
@@ -14,10 +15,36 @@ function respond(ok: boolean, data: Record<string, unknown>) {
   });
 }
 
-async function fetchImageBytes(url: string): Promise<Uint8Array> {
+async function fetchImageBytes(url: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`Falha ao baixar imagem: ${r.status}`);
-  return new Uint8Array(await r.arrayBuffer());
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error("Imagem maior que 20MB");
+  return { bytes, mimeType: detectMimeType(bytes, r.headers.get("content-type"), url) };
+}
+
+function detectMimeType(bytes: Uint8Array, contentType: string | null, url: string): string {
+  const headerType = contentType?.split(";")[0]?.trim().toLowerCase();
+  if (headerType?.startsWith("image/")) return headerType === "image/jpg" ? "image/jpeg" : headerType;
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
+  if (bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
+  const ext = url.split("?")[0].split(".").pop()?.toLowerCase();
+  if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
+  if (ext === "png") return "image/png";
+  if (ext === "gif") return "image/gif";
+  if (ext === "webp") return "image/webp";
+  return "image/jpeg";
+}
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
 }
 
 async function sha256(bytes: Uint8Array): Promise<string> {
