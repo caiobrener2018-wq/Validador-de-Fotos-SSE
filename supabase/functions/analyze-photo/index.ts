@@ -12,34 +12,10 @@ function respond(ok: boolean, data: Record<string, unknown>) {
   });
 }
 
-// Provider list: 10 slots. Slot 4 (index 3) is intentionally Lovable AI (Gemini token 4 está com 403).
-function getProviders(): Array<{ type: "gemini" | "lovable"; key?: string }> {
-  const providers: Array<{ type: "gemini" | "lovable"; key?: string }> = [];
-  for (let i = 1; i <= 10; i++) {
-    if (i === 4) {
-      providers.push({ type: "lovable" });
-    } else {
-      const k = Deno.env.get(`GEMINI_API_KEY_${i}`);
-      if (k) providers.push({ type: "gemini", key: k });
-    }
-  }
-  return providers;
-}
-
-async function fetchImageBytes(url: string): Promise<{ bytes: Uint8Array; mimeType: string }> {
+async function fetchImageBytes(url: string): Promise<Uint8Array> {
   const r = await fetch(url);
   if (!r.ok) throw new Error(`Falha ao baixar imagem: ${r.status}`);
-  const mimeType = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/jpeg";
-  return { bytes: new Uint8Array(await r.arrayBuffer()), mimeType };
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
+  return new Uint8Array(await r.arrayBuffer());
 }
 
 async function sha256(bytes: Uint8Array): Promise<string> {
@@ -101,63 +77,22 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { imageUrl, companyName, segment, keyIndex } = await req.json();
+    const { imageUrl, companyName, segment } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
+
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+    if (!lovableKey) return respond(false, { error: "no_keys", message: "LOVABLE_API_KEY não configurada" });
 
     const systemPrompt = buildSystemPrompt(companyName || "", segment || "");
 
-    // Sempre baixar a imagem para calcular o hash (deduplicação por conteúdo)
+    // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
     let bytes: Uint8Array;
-    let mimeType: string;
     try {
-      const r = await fetchImageBytes(imageUrl);
-      bytes = r.bytes;
-      mimeType = r.mimeType;
+      bytes = await fetchImageBytes(imageUrl);
     } catch (e) {
       return respond(false, { error: "image_fetch", message: e instanceof Error ? e.message : "Falha ao baixar imagem" });
     }
     const imageHash = await sha256(bytes);
-
-    const providers = getProviders();
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-    const provider = providers.length > 0
-      ? providers[((keyIndex ?? 0) % providers.length + providers.length) % providers.length]
-      : { type: "lovable" as const };
-
-    // ===== Provider Gemini direto =====
-    if (provider.type === "gemini" && provider.key) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${provider.key}`;
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{
-            role: "user",
-            parts: [
-              { text: `Analise esta foto de visita do agente à empresa "${companyName || 'N/A'}" (segmento: ${segment || 'N/A'}). Responda apenas com o JSON solicitado.` },
-              { inline_data: { mime_type: mimeType, data: bytesToBase64(bytes) } },
-            ],
-          }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-        }),
-      });
-
-      if (!resp.ok) {
-        const text = await resp.text();
-        console.error("Gemini error:", resp.status, text);
-        if (resp.status === 429) return respond(false, { error: "rate_limit", message: "Rate limit Gemini." });
-        if (resp.status === 403) return respond(false, { error: "forbidden", message: `Gemini 403: ${text.slice(0, 200)}` });
-        return respond(false, { error: "ai_error", message: `Gemini ${resp.status}` });
-      }
-
-      const data = await resp.json();
-      const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).filter(Boolean).join("") || "";
-      return respond(true, { ...parseJson(text), imageHash });
-    }
-
-    // ===== Provider Lovable AI Gateway =====
-    if (!lovableKey) return respond(false, { error: "no_keys", message: "Nenhuma chave configurada" });
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -175,9 +110,11 @@ serve(async (req) => {
     });
 
     if (!response.ok) {
-      if (response.status === 429) return respond(false, { error: "rate_limit" });
-      if (response.status === 402) return respond(false, { error: "credits_exhausted" });
-      return respond(false, { error: "ai_error" });
+      const text = await response.text().catch(() => "");
+      console.error("Lovable AI error:", response.status, text);
+      if (response.status === 429) return respond(false, { error: "rate_limit", message: "Rate limit Lovable AI." });
+      if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados." });
+      return respond(false, { error: "ai_error", message: `Lovable AI ${response.status}` });
     }
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "";
