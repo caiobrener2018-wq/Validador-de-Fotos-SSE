@@ -15,8 +15,12 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Quantas fotos cada worker (slot/key) processa em paralelo
-const PER_WORKER_CONCURRENCY = 2;
+// Teto de requisições simultâneas à API do OpenAI.
+// Não é "workers": é apenas um limite de segurança para o navegador não
+// estourar memória/conexões TCP com planilhas enormes. A API do OpenAI
+// (rate limit do tier) é o gargalo real, e o backoff das retentativas se
+// ajusta automaticamente ao ritmo sustentável.
+const MAX_CONCURRENCY = 100;
 
 async function analyzeOnce(
   photo: { url: string; companyName: string; segment: string }
@@ -63,19 +67,12 @@ const Index = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [agencyFilter, setAgencyFilter] = useState<string>('all');
-  const [keyCount, setKeyCount] = useState<number>(1);
   const { toast } = useToast();
   const agentsRef = useRef<AgentData[]>([]);
   agentsRef.current = agents;
   const pausedRef = useRef(false);
   const cancelledRef = useRef(false);
   const [isPaused, setIsPaused] = useState(false);
-
-  useEffect(() => {
-    supabase.functions.invoke('get-key-count').then(({ data }) => {
-      if (data?.count) setKeyCount(data.count);
-    }).catch(() => {});
-  }, []);
 
   const uniqueAgentNames = useMemo(() => [...new Set(agents.map(a => a.name))].sort(), [agents]);
   const uniqueAgencies = useMemo(() => [...new Set(agents.map(a => a.agency).filter(Boolean))].sort(), [agents]);
@@ -162,69 +159,62 @@ const Index = () => {
 
     let done = 0;
     let cursor = 0;
-    const slots = Math.max(1, keyCount);
+    const inflight = new Set<Promise<void>>();
 
-    // Each worker pulls tasks from the shared queue independently.
-    // Within a worker we run PER_WORKER_CONCURRENCY tasks in parallel.
-    const worker = async (slotIndex: number) => {
-      const inflight = new Set<Promise<void>>();
+    const launch = async (task: { agentIdx: number; photoIdx: number }) => {
+      const agent = updated[task.agentIdx];
+      const photo = agent.photos[task.photoIdx];
+      try {
+        const result = await analyzeWithRetry({
+          url: photo.url,
+          companyName: agent.companyName,
+          segment: agent.segment,
+        }, shouldStop, waitIfPaused);
 
-      const launch = async (task: { agentIdx: number; photoIdx: number }) => {
-        const agent = updated[task.agentIdx];
-        const photo = agent.photos[task.photoIdx];
-        try {
-          const result = await analyzeWithRetry({
-            url: photo.url,
-            companyName: agent.companyName,
-            segment: agent.segment,
-          }, shouldStop, waitIfPaused);
-
-          // AI-based dedup via image hash
-          const hash = result.imageHash as string | undefined;
-          if (hash) {
-            photo.imageHash = hash;
-            const existing = hashMap.get(hash);
-            if (existing && !(existing.agent === agent.name && existing.row === agent.excelRow && agent.photos.indexOf(photo) === task.photoIdx)) {
-              photo.status = 'duplicate';
-              photo.duplicate = true;
-              photo.duplicateOf = existing;
-            } else {
-              hashMap.set(hash, { agent: agent.name, company: agent.companyName, row: agent.excelRow });
-              const { imageHash, ...analysis } = result;
-              photo.analysis = analysis;
-              photo.status = 'done';
-            }
+        // AI-based dedup via image hash
+        const hash = result.imageHash as string | undefined;
+        if (hash) {
+          photo.imageHash = hash;
+          const existing = hashMap.get(hash);
+          if (existing && !(existing.agent === agent.name && existing.row === agent.excelRow && agent.photos.indexOf(photo) === task.photoIdx)) {
+            photo.status = 'duplicate';
+            photo.duplicate = true;
+            photo.duplicateOf = existing;
           } else {
-            photo.analysis = result;
+            hashMap.set(hash, { agent: agent.name, company: agent.companyName, row: agent.excelRow });
+            const { imageHash, ...analysis } = result;
+            photo.analysis = analysis;
             photo.status = 'done';
           }
-        } catch (err: any) {
-          if (err?.cancelled) {
-            photo.status = 'pending';
-          } else {
-            photo.status = 'error';
-            photo.error = err?.message || 'Erro na análise';
-          }
+        } else {
+          photo.analysis = result;
+          photo.status = 'done';
         }
-        updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
-        done++;
-        setProgress(Math.round((done / total) * 100));
-        scheduleFlush();
-      };
-
-      while (true) {
-        while (inflight.size < PER_WORKER_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
-          const task = tasks[cursor++];
-          const p = launch(task).finally(() => { inflight.delete(p); });
-          inflight.add(p);
+      } catch (err: any) {
+        if (err?.cancelled) {
+          photo.status = 'pending';
+        } else {
+          photo.status = 'error';
+          photo.error = err?.message || 'Erro na análise';
         }
-        if (inflight.size === 0) break;
-        await Promise.race(inflight);
       }
+      updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
+      done++;
+      setProgress(Math.round((done / total) * 100));
+      scheduleFlush();
     };
 
-    const workers = Array.from({ length: slots }, (_, i) => worker(i));
-    await Promise.all(workers);
+    // Pool dinâmico: dispara até MAX_CONCURRENCY simultâneas; assim que uma
+    // termina, outra é iniciada imediatamente — sem esperar lotes.
+    while (cursor < tasks.length || inflight.size > 0) {
+      while (inflight.size < MAX_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
+        const task = tasks[cursor++];
+        const p = launch(task).finally(() => { inflight.delete(p); });
+        inflight.add(p);
+      }
+      if (inflight.size === 0) break;
+      await Promise.race(inflight);
+    }
     clearInterval(flushTimer);
     flush();
 
@@ -237,7 +227,7 @@ const Index = () => {
       title: wasCancelled ? 'Análise cancelada' : 'Análise concluída!',
       description: `${done} fotos processadas`,
     });
-  }, [toast, keyCount]);
+  }, [toast]);
 
   const handlePauseToggle = useCallback(() => {
     pausedRef.current = !pausedRef.current;
@@ -302,7 +292,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{isPaused ? 'Pausado' : `Analisando fotos... (${keyCount} workers × ${PER_WORKER_CONCURRENCY} paralelas)`}</span>
+                  <span>{isPaused ? 'Pausado' : `Analisando fotos... (até ${MAX_CONCURRENCY} em paralelo)`}</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />

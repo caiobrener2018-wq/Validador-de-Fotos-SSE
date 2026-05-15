@@ -5,6 +5,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const OPENAI_MODEL = "gpt-4o-mini";
+
 function respond(ok: boolean, data: Record<string, unknown>) {
   return new Response(JSON.stringify({ ok, ...data }), {
     status: 200,
@@ -80,8 +82,8 @@ serve(async (req) => {
     const { imageUrl, companyName, segment } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
-    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!lovableKey) return respond(false, { error: "no_keys", message: "LOVABLE_API_KEY não configurada" });
+    const openaiKey = Deno.env.get("API_CHAT_RENATINHA");
+    if (!openaiKey) return respond(false, { error: "no_keys", message: "API_CHAT_RENATINHA não configurada" });
 
     const systemPrompt = buildSystemPrompt(companyName || "", segment || "");
 
@@ -94,11 +96,12 @@ serve(async (req) => {
     }
     const imageHash = await sha256(bytes);
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: OPENAI_MODEL,
+        response_format: { type: "json_object" },
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: [
@@ -111,10 +114,15 @@ serve(async (req) => {
 
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      console.error("Lovable AI error:", response.status, text);
-      if (response.status === 429) return respond(false, { error: "rate_limit", message: "Rate limit Lovable AI." });
+      console.error("OpenAI error:", response.status, text);
+      if (response.status === 429) {
+        if (text.includes("insufficient_quota")) {
+          return respond(false, { error: "credits_exhausted", message: "Créditos OpenAI esgotados." });
+        }
+        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI." });
+      }
       if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados." });
-      return respond(false, { error: "ai_error", message: `Lovable AI ${response.status}` });
+      return respond(false, { error: "ai_error", message: `OpenAI ${response.status}` });
     }
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content || "";
