@@ -2,13 +2,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  // Usa Lovable AI: 10 workers paralelos no cliente.
-  return new Response(JSON.stringify({ count: 10 }), {
+  return new Response(JSON.stringify({ count: 1 }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });
