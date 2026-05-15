@@ -116,12 +116,16 @@ serve(async (req) => {
 
     // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
     let bytes: Uint8Array;
+    let mimeType: string;
     try {
-      bytes = await fetchImageBytes(imageUrl);
+      const fetchedImage = await fetchImageBytes(imageUrl);
+      bytes = fetchedImage.bytes;
+      mimeType = fetchedImage.mimeType;
     } catch (e) {
       return respond(false, { error: "image_fetch", message: e instanceof Error ? e.message : "Falha ao baixar imagem" });
     }
     const imageHash = await sha256(bytes);
+    const dataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -133,9 +137,10 @@ serve(async (req) => {
           { role: "system", content: systemPrompt },
           { role: "user", content: [
             { type: "text", text: `Analise esta foto da empresa "${companyName || 'N/A'}":` },
-            { type: "image_url", image_url: { url: imageUrl } },
+            { type: "image_url", image_url: { url: dataUrl, detail: "low" } },
           ] },
         ],
+        max_tokens: 220,
       }),
     });
 
@@ -149,6 +154,7 @@ serve(async (req) => {
         return respond(false, { error: "rate_limit", message: "Rate limit OpenAI." });
       }
       if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados." });
+      if (response.status === 400) return respond(false, { error: "bad_request", message: "OpenAI 400: formato de imagem inválido ou não suportado." });
       return respond(false, { error: "ai_error", message: `OpenAI ${response.status}` });
     }
     const data = await response.json();
