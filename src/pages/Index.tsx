@@ -177,7 +177,6 @@ const Index = () => {
             url: photo.url,
             companyName: agent.companyName,
             segment: agent.segment,
-            keyIndex: slotIndex,
           }, shouldStop, waitIfPaused);
 
           // AI-based dedup via image hash
