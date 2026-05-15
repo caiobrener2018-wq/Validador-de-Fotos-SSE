@@ -15,12 +15,12 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Teto de requisições simultâneas à API do OpenAI.
-// Não é "workers": é apenas um limite de segurança para o navegador não
-// estourar memória/conexões TCP com planilhas enormes. A API do OpenAI
-// (rate limit do tier) é o gargalo real, e o backoff das retentativas se
-// ajusta automaticamente ao ritmo sustentável.
-const MAX_CONCURRENCY = 100;
+// Pool contínuo e adaptativo para a API do OpenAI.
+// Começa agressivo, reduz quando a própria API sinaliza rate limit e volta a
+// subir aos poucos quando estabiliza. Assim evita lotes travados de 100 fotos.
+const MIN_CONCURRENCY = 6;
+const INITIAL_CONCURRENCY = 20;
+const MAX_CONCURRENCY = 40;
 
 async function analyzeOnce(
   photo: { url: string; companyName: string; segment: string }
@@ -29,7 +29,10 @@ async function analyzeOnce(
     body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment },
   });
   if (data?.ok === false && data.error === 'rate_limit') {
-    const err: any = new Error('rate_limit'); err.rateLimit = true; throw err;
+    const err: any = new Error('rate_limit');
+    err.rateLimit = true;
+    err.retryAfterMs = Number(data.retryAfterMs) || 3000;
+    throw err;
   }
   if (data?.ok === false && data.error === 'credits_exhausted') {
     const err: any = new Error('credits_exhausted'); err.credits = true; throw err;
@@ -43,8 +46,20 @@ async function analyzeWithRetry(
   photo: { url: string; companyName: string; segment: string },
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
+  onRateLimit: (retryAfterMs: number) => void,
   maxRetries = 8
 ): Promise<any> {
+  const controlledDelay = async (ms: number) => {
+    let remaining = ms;
+    while (remaining > 0) {
+      await waitIfPaused();
+      if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
+      const step = Math.min(remaining, 250);
+      await new Promise(r => setTimeout(r, step));
+      remaining -= step;
+    }
+  };
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     await waitIfPaused();
     if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
@@ -53,8 +68,10 @@ async function analyzeWithRetry(
     } catch (err: any) {
       if (err?.cancelled) throw err;
       if (attempt >= maxRetries) throw err;
-      const base = err?.rateLimit ? 3000 : 1500;
-      await new Promise(r => setTimeout(r, base * Math.pow(1.6, attempt)));
+      if (err?.rateLimit) onRateLimit(Number(err.retryAfterMs) || 3000);
+      const base = err?.rateLimit ? Math.max(Number(err.retryAfterMs) || 3000, 3000) : 1500;
+      const jitter = Math.floor(Math.random() * 500);
+      await controlledDelay(base * Math.pow(1.45, attempt) + jitter);
     }
   }
 }
@@ -160,6 +177,14 @@ const Index = () => {
     let done = 0;
     let cursor = 0;
     const inflight = new Set<Promise<void>>();
+    let currentConcurrency = INITIAL_CONCURRENCY;
+    let stableCompletions = 0;
+
+    const onRateLimit = (retryAfterMs: number) => {
+      currentConcurrency = Math.max(MIN_CONCURRENCY, Math.floor(currentConcurrency * 0.65));
+      stableCompletions = 0;
+      console.info(`OpenAI rate limit: reduzindo paralelismo para ${currentConcurrency}. Retry em ${retryAfterMs}ms.`);
+    };
 
     const launch = async (task: { agentIdx: number; photoIdx: number }) => {
       const agent = updated[task.agentIdx];
@@ -169,7 +194,12 @@ const Index = () => {
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
-        }, shouldStop, waitIfPaused);
+        }, shouldStop, waitIfPaused, onRateLimit);
+        stableCompletions++;
+        if (stableCompletions >= 30 && currentConcurrency < MAX_CONCURRENCY) {
+          currentConcurrency++;
+          stableCompletions = 0;
+        }
 
         // AI-based dedup via image hash
         const hash = result.imageHash as string | undefined;
@@ -204,10 +234,10 @@ const Index = () => {
       scheduleFlush();
     };
 
-    // Pool dinâmico: dispara até MAX_CONCURRENCY simultâneas; assim que uma
+    // Pool dinâmico: dispara até currentConcurrency simultâneas; assim que uma
     // termina, outra é iniciada imediatamente — sem esperar lotes.
     while (cursor < tasks.length || inflight.size > 0) {
-      while (inflight.size < MAX_CONCURRENCY && cursor < tasks.length && !cancelledRef.current) {
+      while (inflight.size < currentConcurrency && cursor < tasks.length && !cancelledRef.current) {
         const task = tasks[cursor++];
         const p = launch(task).finally(() => { inflight.delete(p); });
         inflight.add(p);
@@ -292,7 +322,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{isPaused ? 'Pausado' : `Analisando fotos... (até ${MAX_CONCURRENCY} em paralelo)`}</span>
+                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (fila contínua adaptativa)'}</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />
