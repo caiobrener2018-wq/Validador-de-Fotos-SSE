@@ -18,9 +18,9 @@ import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X
 // Fila contínua adaptativa para OpenAI: respeita ~500 RPM sem formar lotes.
 const OPENAI_RPM_LIMIT = 480;
 const START_INTERVAL_MS = Math.ceil(60_000 / OPENAI_RPM_LIMIT);
-const MIN_CONCURRENCY = 8;
-const INITIAL_CONCURRENCY = 28;
-const MAX_CONCURRENCY = 48;
+const MIN_CONCURRENCY = 12;
+const INITIAL_CONCURRENCY = 40;
+const MAX_CONCURRENCY = 96;
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
