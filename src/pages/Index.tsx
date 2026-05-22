@@ -15,12 +15,14 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Pool contínuo e adaptativo para a API do OpenAI.
-// Começa agressivo, reduz quando a própria API sinaliza rate limit e volta a
-// subir aos poucos quando estabiliza. Assim evita lotes travados de 100 fotos.
-const MIN_CONCURRENCY = 6;
-const INITIAL_CONCURRENCY = 20;
-const MAX_CONCURRENCY = 40;
+// Fila contínua adaptativa para OpenAI: respeita ~500 RPM sem formar lotes.
+const OPENAI_RPM_LIMIT = 480;
+const START_INTERVAL_MS = Math.ceil(60_000 / OPENAI_RPM_LIMIT);
+const MIN_CONCURRENCY = 8;
+const INITIAL_CONCURRENCY = 28;
+const MAX_CONCURRENCY = 48;
+const INITIAL_VISIBLE_AGENTS = 120;
+const LOAD_MORE_AGENTS = 120;
 
 async function analyzeOnce(
   photo: { url: string; companyName: string; segment: string }
@@ -47,6 +49,7 @@ async function analyzeWithRetry(
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
+  waitForStartSlot: () => Promise<void>,
   maxRetries = 8
 ): Promise<any> {
   const controlledDelay = async (ms: number) => {
@@ -64,6 +67,7 @@ async function analyzeWithRetry(
     await waitIfPaused();
     if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
     try {
+      await waitForStartSlot();
       return await analyzeOnce(photo);
     } catch (err: any) {
       if (err?.cancelled) throw err;
