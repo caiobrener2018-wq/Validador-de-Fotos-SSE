@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useState, memo, type CSSProperties } from 'react';
 import { AgentData } from '@/types/analysis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -42,7 +42,7 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
 
 function AgentCardImpl({ agent }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
-  const renderHint = { contentVisibility: 'auto', containIntrinsicSize: '260px' } as React.CSSProperties;
+  const renderHint = { contentVisibility: 'auto', containIntrinsicSize: '260px' } as CSSProperties;
   const noPhotos = agent.photos.length === 0;
   const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
   const hasInconsistency = agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
