@@ -88,6 +88,7 @@ const Index = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [agencyFilter, setAgencyFilter] = useState<string>('all');
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_AGENTS);
   const { toast } = useToast();
   const agentsRef = useRef<AgentData[]>([]);
   agentsRef.current = agents;
@@ -124,6 +125,27 @@ const Index = () => {
       while (pausedRef.current && !cancelledRef.current) {
         await new Promise(r => setTimeout(r, 250));
       }
+    };
+    let nextStartAt = 0;
+    let startQueue = Promise.resolve();
+    const pacedDelay = async (ms: number) => {
+      let remaining = ms;
+      while (remaining > 0) {
+        await waitIfPaused();
+        if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
+        const step = Math.min(remaining, 100);
+        await new Promise(r => setTimeout(r, step));
+        remaining -= step;
+      }
+    };
+    const waitForStartSlot = () => {
+      const turn = startQueue.then(async () => {
+        const waitMs = Math.max(0, nextStartAt - Date.now());
+        if (waitMs > 0) await pacedDelay(waitMs);
+        nextStartAt = Date.now() + START_INTERVAL_MS;
+      });
+      startQueue = turn.catch(() => undefined);
+      return turn;
     };
 
     // Clone top-level array; agent objects are cloned on update for memo to work
@@ -183,6 +205,7 @@ const Index = () => {
     const inflight = new Set<Promise<void>>();
     let currentConcurrency = INITIAL_CONCURRENCY;
     let stableCompletions = 0;
+    let lastProgress = -1;
 
     const onRateLimit = (retryAfterMs: number) => {
       currentConcurrency = Math.max(MIN_CONCURRENCY, Math.floor(currentConcurrency * 0.65));
@@ -198,7 +221,7 @@ const Index = () => {
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
-        }, shouldStop, waitIfPaused, onRateLimit);
+        }, shouldStop, waitIfPaused, onRateLimit, waitForStartSlot);
         stableCompletions++;
         if (stableCompletions >= 30 && currentConcurrency < MAX_CONCURRENCY) {
           currentConcurrency++;
@@ -234,7 +257,11 @@ const Index = () => {
       }
       updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
       done++;
-      setProgress(Math.round((done / total) * 100));
+      const nextProgress = Math.round((done / total) * 100);
+      if (nextProgress !== lastProgress || done === total) {
+        lastProgress = nextProgress;
+        setProgress(nextProgress);
+      }
       scheduleFlush();
     };
 
