@@ -313,6 +313,11 @@ const Index = () => {
     const hasInconsistency = noPhotos || agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
     return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
   }), [agents, agentFilter, agencyFilter, filter]);
+  const visibleAgents = useMemo(() => filteredAgents.slice(0, visibleCount), [filteredAgents, visibleCount]);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_AGENTS);
+  }, [agents, agentFilter, agencyFilter, filter]);
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const hasResults = agents.some(a => a.photos.some(p => p.status === 'done'));
@@ -353,7 +358,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (fila contínua adaptativa)'}</span>
+                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (fila contínua até 500 RPM)'}</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />
@@ -451,10 +456,18 @@ const Index = () => {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              {filteredAgents.map((agent, idx) => (
+              {visibleAgents.map((agent, idx) => (
                 <AgentCard key={`${agent.excelRow}-${idx}`} agent={agent} />
               ))}
             </div>
+
+            {visibleCount < filteredAgents.length && (
+              <div className="flex justify-center">
+                <Button variant="outline" onClick={() => setVisibleCount(count => count + LOAD_MORE_AGENTS)}>
+                  Carregar mais atendimentos ({filteredAgents.length - visibleCount} restantes)
+                </Button>
+              </div>
+            )}
 
             {filteredAgents.length === 0 && (
               <p className="text-center text-muted-foreground py-8">Nenhum atendimento encontrado com esse filtro.</p>
