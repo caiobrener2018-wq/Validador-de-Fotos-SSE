@@ -111,6 +111,40 @@ function parseRetryAfterMs(text: string): number {
   return DEFAULT_RETRY_AFTER_MS;
 }
 
+async function callOpenAI(openaiKey: string, systemPrompt: string, companyName: string, imageUrl: string) {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: [
+          { type: "text", text: `Analise esta foto da empresa "${companyName || 'N/A'}":` },
+          { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
+        ] },
+      ],
+      max_tokens: 220,
+    }),
+  });
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    text: await response.text().catch(() => ""),
+  };
+}
+
+function extractOpenAIContent(text: string): string {
+  try {
+    const data = JSON.parse(text);
+    return data.choices?.[0]?.message?.content || "";
+  } catch {
+    return "";
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
