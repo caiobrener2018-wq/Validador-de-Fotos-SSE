@@ -170,38 +170,24 @@ serve(async (req) => {
     const imageHash = await sha256(bytes);
     const dataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: [
-            { type: "text", text: `Analise esta foto da empresa "${companyName || 'N/A'}":` },
-            { type: "image_url", image_url: { url: dataUrl, detail: "low" } },
-          ] },
-        ],
-        max_tokens: 220,
-      }),
-    });
+    let response = await callOpenAI(openaiKey, systemPrompt, companyName || "", imageUrl);
+    if (!response.ok && response.status === 400) {
+      response = await callOpenAI(openaiKey, systemPrompt, companyName || "", dataUrl);
+    }
 
     if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      console.error("OpenAI error:", response.status, text);
+      console.error("OpenAI error:", response.status, response.text);
       if (response.status === 429) {
-        if (text.includes("insufficient_quota")) {
+        if (response.text.includes("insufficient_quota")) {
           return respond(false, { error: "credits_exhausted", message: "Créditos OpenAI esgotados." });
         }
-        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI.", retryAfterMs: parseRetryAfterMs(text) });
+        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI.", retryAfterMs: parseRetryAfterMs(response.text) });
       }
       if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados." });
-      if (response.status === 400) return respond(false, { error: "bad_request", message: "OpenAI 400: formato de imagem inválido ou não suportado." });
+      if (response.status === 400) return respond(false, { error: "bad_request", message: "OpenAI 400: formato de imagem inválido ou URL inacessível." });
       return respond(false, { error: "ai_error", message: `OpenAI ${response.status}` });
     }
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
+    const content = extractOpenAIContent(response.text);
     return respond(true, { ...parseJson(content), imageHash });
   } catch (e) {
     console.error("Error:", e);
