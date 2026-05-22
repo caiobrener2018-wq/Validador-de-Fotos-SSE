@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useState, memo, type CSSProperties } from 'react';
 import { AgentData } from '@/types/analysis';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +42,7 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
 
 function AgentCardImpl({ agent }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const renderHint = { contentVisibility: 'auto', containIntrinsicSize: '260px' } as CSSProperties;
   const noPhotos = agent.photos.length === 0;
   const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
   const hasInconsistency = agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
@@ -50,7 +51,7 @@ function AgentCardImpl({ agent }: Props) {
 
   return (
     <>
-      <Card className={hasInconsistency && allDone ? 'border-destructive/50' : ''}>
+      <Card className={hasInconsistency && allDone ? 'border-destructive/50' : ''} style={renderHint}>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="min-w-0">
@@ -141,7 +142,7 @@ function AgentCardImpl({ agent }: Props) {
       <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
         <DialogContent className="max-w-3xl p-2">
           {selectedPhoto && (
-            <ProxyImg src={selectedPhoto} alt="Foto ampliada" className="w-full h-auto rounded" />
+            <ProxyImg src={selectedPhoto} alt="Foto ampliada" className="w-full max-h-[80vh] object-contain rounded" />
           )}
         </DialogContent>
       </Dialog>

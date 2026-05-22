@@ -15,12 +15,14 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Pool contínuo e adaptativo para a API do OpenAI.
-// Começa agressivo, reduz quando a própria API sinaliza rate limit e volta a
-// subir aos poucos quando estabiliza. Assim evita lotes travados de 100 fotos.
-const MIN_CONCURRENCY = 6;
-const INITIAL_CONCURRENCY = 20;
-const MAX_CONCURRENCY = 40;
+// Fila contínua adaptativa para OpenAI: respeita ~500 RPM sem formar lotes.
+const OPENAI_RPM_LIMIT = 480;
+const START_INTERVAL_MS = Math.ceil(60_000 / OPENAI_RPM_LIMIT);
+const MIN_CONCURRENCY = 12;
+const INITIAL_CONCURRENCY = 40;
+const MAX_CONCURRENCY = 96;
+const INITIAL_VISIBLE_AGENTS = 120;
+const LOAD_MORE_AGENTS = 120;
 
 async function analyzeOnce(
   photo: { url: string; companyName: string; segment: string }
@@ -47,6 +49,7 @@ async function analyzeWithRetry(
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
+  waitForStartSlot: () => Promise<void>,
   maxRetries = 8
 ): Promise<any> {
   const controlledDelay = async (ms: number) => {
@@ -64,6 +67,7 @@ async function analyzeWithRetry(
     await waitIfPaused();
     if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
     try {
+      await waitForStartSlot();
       return await analyzeOnce(photo);
     } catch (err: any) {
       if (err?.cancelled) throw err;
@@ -84,6 +88,7 @@ const Index = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [agencyFilter, setAgencyFilter] = useState<string>('all');
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_AGENTS);
   const { toast } = useToast();
   const agentsRef = useRef<AgentData[]>([]);
   agentsRef.current = agents;
@@ -120,6 +125,27 @@ const Index = () => {
       while (pausedRef.current && !cancelledRef.current) {
         await new Promise(r => setTimeout(r, 250));
       }
+    };
+    let nextStartAt = 0;
+    let startQueue = Promise.resolve();
+    const pacedDelay = async (ms: number) => {
+      let remaining = ms;
+      while (remaining > 0) {
+        await waitIfPaused();
+        if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
+        const step = Math.min(remaining, 100);
+        await new Promise(r => setTimeout(r, step));
+        remaining -= step;
+      }
+    };
+    const waitForStartSlot = () => {
+      const turn = startQueue.then(async () => {
+        const waitMs = Math.max(0, nextStartAt - Date.now());
+        if (waitMs > 0) await pacedDelay(waitMs);
+        nextStartAt = Date.now() + START_INTERVAL_MS;
+      });
+      startQueue = turn.catch(() => undefined);
+      return turn;
     };
 
     // Clone top-level array; agent objects are cloned on update for memo to work
@@ -179,6 +205,7 @@ const Index = () => {
     const inflight = new Set<Promise<void>>();
     let currentConcurrency = INITIAL_CONCURRENCY;
     let stableCompletions = 0;
+    let lastProgress = -1;
 
     const onRateLimit = (retryAfterMs: number) => {
       currentConcurrency = Math.max(MIN_CONCURRENCY, Math.floor(currentConcurrency * 0.65));
@@ -194,7 +221,7 @@ const Index = () => {
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
-        }, shouldStop, waitIfPaused, onRateLimit);
+        }, shouldStop, waitIfPaused, onRateLimit, waitForStartSlot);
         stableCompletions++;
         if (stableCompletions >= 30 && currentConcurrency < MAX_CONCURRENCY) {
           currentConcurrency++;
@@ -230,7 +257,11 @@ const Index = () => {
       }
       updated[task.agentIdx] = { ...agent, photos: agent.photos.slice() };
       done++;
-      setProgress(Math.round((done / total) * 100));
+      const nextProgress = Math.round((done / total) * 100);
+      if (nextProgress !== lastProgress || done === total) {
+        lastProgress = nextProgress;
+        setProgress(nextProgress);
+      }
       scheduleFlush();
     };
 
@@ -282,6 +313,11 @@ const Index = () => {
     const hasInconsistency = noPhotos || agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
     return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
   }), [agents, agentFilter, agencyFilter, filter]);
+  const visibleAgents = useMemo(() => filteredAgents.slice(0, visibleCount), [filteredAgents, visibleCount]);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_AGENTS);
+  }, [agents, agentFilter, agencyFilter, filter]);
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const hasResults = agents.some(a => a.photos.some(p => p.status === 'done'));
@@ -322,7 +358,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (fila contínua adaptativa)'}</span>
+                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (fila contínua até 500 RPM)'}</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />
@@ -420,10 +456,18 @@ const Index = () => {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              {filteredAgents.map((agent, idx) => (
+              {visibleAgents.map((agent, idx) => (
                 <AgentCard key={`${agent.excelRow}-${idx}`} agent={agent} />
               ))}
             </div>
+
+            {visibleCount < filteredAgents.length && (
+              <div className="flex justify-center">
+                <Button variant="outline" onClick={() => setVisibleCount(count => count + LOAD_MORE_AGENTS)}>
+                  Carregar mais atendimentos ({filteredAgents.length - visibleCount} restantes)
+                </Button>
+              </div>
+            )}
 
             {filteredAgents.length === 0 && (
               <p className="text-center text-muted-foreground py-8">Nenhum atendimento encontrado com esse filtro.</p>
