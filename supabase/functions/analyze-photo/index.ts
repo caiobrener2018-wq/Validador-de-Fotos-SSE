@@ -56,38 +56,43 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-function buildSystemPrompt(companyName: string, segment: string): string {
-  const contextInfo = (companyName || segment)
+function buildSystemPrompt(companyName: string, segment: string, agentName: string): string {
+  const contextInfo = (companyName || segment || agentName)
     ? `\n\nCONTEXTO DA VISITA:
-- Empresa: ${companyName || 'Não informado'}
+- Agente Sebrae responsável: ${agentName || 'Não informado'}
+- Empresa visitada: ${companyName || 'Não informado'}
 - Segmento: ${segment || 'Não informado'}
 
-Use essas informações para verificar se o conteúdo visual da foto é compatível com o segmento da empresa.`
+Use essas informações para verificar se o conteúdo visual é compatível com o segmento da empresa.`
     : '';
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
-Critérios booleanos:
-1 fachada: fachada, marca ou logotipo de estabelecimento.
-2 empresario: pessoas em reunião/atendimento profissional.
-3 interior: ambiente comercial interno com produtos, balcão, escritório, oficina ou equipamentos.
-4 fundo_valido: rejeite parede lisa/branca ou fundo sem contexto comercial.
-5 contexto_segmento: imagem compatível com empresa/segmento informado.
-${contextInfo}
 
-Aprovada = (fachada OU empresario OU interior) E fundo_valido E contexto_segmento.
+Critérios booleanos (true/false):
+1 fachada: fachada, marca ou logotipo do estabelecimento visível.
+2 agente_sebrae: aparece o consultor/agente Sebrae (visitante externo — crachá, pasta, roupa social/uniforme institucional, postura de visita).
+3 empresario_ou_funcionario: aparece o empresário, sócio ou funcionário do próprio estabelecimento (uniforme da loja, avental, atrás do balcão, operando equipamento, atendendo cliente).
+4 interior: ambiente comercial interno (produtos, balcão, escritório, oficina, equipamentos).
+5 fundo_valido: rejeite parede lisa/branca, fundo neutro ou sem contexto comercial.
+6 contexto_segmento: imagem compatível com o segmento informado.
+7 gerada_por_ia: indícios de imagem gerada/editada por IA — mãos/dedos deformados, texto ilegível em placas/produtos, simetria antinatural, iluminação inconsistente, fundo "plástico", olhos/orelhas assimétricos, repetição de padrões. Seja conservador: marque true só com indícios claros.
 
-Responda apenas JSON válido:
+Aprovada = (fachada OU agente_sebrae OU empresario_ou_funcionario OU interior) E fundo_valido E contexto_segmento E NÃO gerada_por_ia.
+
+Responda APENAS JSON válido:
 {
   "aprovada": true,
   "criterios": {
     "fachada": true,
-    "empresario": false,
+    "agente_sebrae": false,
+    "empresario_ou_funcionario": true,
     "interior": true,
     "fundo_valido": true,
-    "contexto_segmento": true
+    "contexto_segmento": true,
+    "gerada_por_ia": false
   },
-  "justificativa": "Explicação breve"
-}`;
+  "justificativa": "Explicação breve em 1-2 frases"
+}${contextInfo}`;
 }
 
 function parseJson(text: string) {
