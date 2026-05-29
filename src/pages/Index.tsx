@@ -134,8 +134,6 @@ const Index = () => {
         await new Promise(r => setTimeout(r, 250));
       }
     };
-    let nextStartAt = 0;
-    let startQueue = Promise.resolve();
     const pacedDelay = async (ms: number) => {
       let remaining = ms;
       while (remaining > 0) {
@@ -146,14 +144,21 @@ const Index = () => {
         remaining -= step;
       }
     };
-    const waitForStartSlot = () => {
-      const turn = startQueue.then(async () => {
-        const waitMs = Math.max(0, nextStartAt - Date.now());
-        if (waitMs > 0) await pacedDelay(waitMs);
-        nextStartAt = Date.now() + START_INTERVAL_MS;
-      });
-      startQueue = turn.catch(() => undefined);
-      return turn;
+    // Um pacing independente por worker/modelo: cada um respeita seus ~500 RPM.
+    const makePacer = (rpm: number) => {
+      const intervalMs = Math.ceil(60_000 / rpm);
+      let nextStartAt = 0;
+      let startQueue: Promise<void> = Promise.resolve();
+      const waitForStartSlot = () => {
+        const turn = startQueue.then(async () => {
+          const waitMs = Math.max(0, nextStartAt - Date.now());
+          if (waitMs > 0) await pacedDelay(waitMs);
+          nextStartAt = Date.now() + intervalMs;
+        });
+        startQueue = turn.catch(() => undefined);
+        return turn;
+      };
+      return waitForStartSlot;
     };
 
     // Clone top-level array; agent objects are cloned on update for memo to work
