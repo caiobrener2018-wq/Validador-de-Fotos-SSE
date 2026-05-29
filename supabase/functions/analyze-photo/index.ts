@@ -6,7 +6,7 @@ const corsHeaders = {
 };
 
 const DEFAULT_MODEL = "gpt-4o-mini";
-const ALLOWED_MODELS = new Set(["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o", "gpt-4.1"]);
+const ALLOWED_MODELS = new Set(["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-5-mini", "gpt-4o", "gpt-4.1"]);
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const DEFAULT_RETRY_AFTER_MS = 3000;
 
