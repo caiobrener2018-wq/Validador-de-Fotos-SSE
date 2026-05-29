@@ -72,7 +72,13 @@ Use essas informações para verificar se o conteúdo visual é compatível com 
 Critérios booleanos (true/false):
 1 fachada: fachada, marca ou logotipo do estabelecimento visível.
 2 agente_sebrae: aparece o consultor/agente Sebrae (visitante externo — crachá, pasta, roupa social/uniforme institucional, postura de visita).
-3 empresario_ou_funcionario: aparece o empresário, sócio ou funcionário do próprio estabelecimento (uniforme da loja, avental, atrás do balcão, operando equipamento, atendendo cliente).
+3 empresario_ou_funcionario: **CRITÉRIO PRINCIPAL — seja generoso e criterioso ao examinar a foto inteira**. Marque true se houver QUALQUER segunda pessoa além do agente, especialmente quando:
+   - Aparece ao lado, atrás ou próxima ao agente (mesmo parcialmente, de perfil, ao fundo, fora de foco).
+   - Está olhando para a câmera junto com o agente (foto posada lado a lado é o padrão típico de validação).
+   - Segura um panfleto, folder, material ou cartão com a marca "Sebrae" ou "Sebrae na Sua Empresa" (forte indicador de empresário recebendo a visita).
+   - Veste uniforme da loja, avental, jaleco, crachá do estabelecimento, ou roupa informal/de trabalho diferente do agente.
+   - Está atrás do balcão, operando equipamento, atendendo cliente, ou em postura de quem trabalha no local.
+   Só marque false se a foto tiver APENAS o agente sozinho, ou nenhuma pessoa, ou apenas clientes claramente de passagem sem interação. Na dúvida entre "só agente" e "agente + alguém", marque true.
 4 interior: ambiente comercial interno (produtos, balcão, escritório, oficina, equipamentos).
 5 fundo_valido: rejeite parede lisa/branca, fundo neutro ou sem contexto comercial.
 6 contexto_segmento: imagem compatível com o segmento informado.
