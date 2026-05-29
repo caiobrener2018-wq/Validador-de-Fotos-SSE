@@ -95,16 +95,43 @@ Responda APENAS JSON válido:
 }${contextInfo}`;
 }
 
+const EMPTY_CRITERIA = {
+  fachada: false,
+  agente_sebrae: false,
+  empresario_ou_funcionario: false,
+  interior: false,
+  fundo_valido: false,
+  contexto_segmento: false,
+  gerada_por_ia: false,
+};
+
+function normalize(raw: any) {
+  const c = (raw && typeof raw === "object" && raw.criterios) || {};
+  const criterios = {
+    fachada: !!c.fachada,
+    agente_sebrae: !!(c.agente_sebrae ?? c.agente),
+    empresario_ou_funcionario: !!(c.empresario_ou_funcionario ?? c.empresario),
+    interior: !!c.interior,
+    fundo_valido: !!c.fundo_valido,
+    contexto_segmento: !!c.contexto_segmento,
+    gerada_por_ia: !!c.gerada_por_ia,
+  };
+  return {
+    aprovada: !!raw?.aprovada && !criterios.gerada_por_ia,
+    criterios,
+    justificativa: typeof raw?.justificativa === "string" ? raw.justificativa : "",
+  };
+}
+
 function parseJson(text: string) {
   try {
-    return JSON.parse(text);
+    return normalize(JSON.parse(text));
   } catch {
     const m = text.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : {
-      aprovada: false,
-      criterios: { fachada: false, empresario: false, interior: false, fundo_valido: false, contexto_segmento: false },
-      justificativa: "Não foi possível analisar a imagem.",
-    };
+    if (m) {
+      try { return normalize(JSON.parse(m[0])); } catch { /* fallthrough */ }
+    }
+    return { aprovada: false, criterios: { ...EMPTY_CRITERIA }, justificativa: "Não foi possível analisar a imagem." };
   }
 }
 
