@@ -222,35 +222,47 @@ const Index = () => {
 
     let done = 0;
     let cursor = 0;
-    const inflight = new Set<Promise<void>>();
-    let currentConcurrency = INITIAL_CONCURRENCY;
-    let stableCompletions = 0;
     let lastProgress = -1;
 
-    const onRateLimit = (retryAfterMs: number) => {
-      currentConcurrency = Math.max(MIN_CONCURRENCY, Math.floor(currentConcurrency * 0.65));
-      stableCompletions = 0;
-      console.info(`OpenAI rate limit: reduzindo paralelismo para ${currentConcurrency}. Retry em ${retryAfterMs}ms.`);
+    // Estado por worker (cada um = um modelo OpenAI com seu próprio RPM).
+    type Worker = {
+      model: string;
+      pacer: () => Promise<void>;
+      inflight: Set<Promise<void>>;
+      currentConcurrency: number;
+      stableCompletions: number;
+    };
+    const workers: Worker[] = WORKERS.map(w => ({
+      model: w.model,
+      pacer: makePacer(w.rpm),
+      inflight: new Set<Promise<void>>(),
+      currentConcurrency: INITIAL_CONCURRENCY_PER_WORKER,
+      stableCompletions: 0,
+    }));
+
+    const onRateLimit = (worker: Worker, retryAfterMs: number) => {
+      worker.currentConcurrency = Math.max(MIN_CONCURRENCY_PER_WORKER, Math.floor(worker.currentConcurrency * 0.65));
+      worker.stableCompletions = 0;
+      console.info(`OpenAI rate limit (${worker.model}): reduzindo paralelismo para ${worker.currentConcurrency}. Retry em ${retryAfterMs}ms.`);
     };
 
-    const launch = async (task: { agentIdx: number; photoIdx: number }) => {
+    const launch = async (worker: Worker, task: { agentIdx: number; photoIdx: number }) => {
       const agent = updated[task.agentIdx];
       const photo = agent.photos[task.photoIdx];
       try {
-        // Dispara análise e hash perceptual em paralelo.
         const analysisPromise = analyzeWithRetry({
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
           agentName: agent.name,
-        }, shouldStop, waitIfPaused, onRateLimit, waitForStartSlot);
+        }, worker.model, shouldStop, waitIfPaused, (ms) => onRateLimit(worker, ms), worker.pacer);
         const pHashPromise = computePerceptualHash(photo.url).catch(() => null);
 
         const [result, pHash] = await Promise.all([analysisPromise, pHashPromise]);
-        stableCompletions++;
-        if (stableCompletions >= 30 && currentConcurrency < MAX_CONCURRENCY) {
-          currentConcurrency++;
-          stableCompletions = 0;
+        worker.stableCompletions++;
+        if (worker.stableCompletions >= 30 && worker.currentConcurrency < MAX_CONCURRENCY_PER_WORKER) {
+          worker.currentConcurrency++;
+          worker.stableCompletions = 0;
         }
 
         const selfRef: DupRef = { agent: agent.name, company: agent.companyName, row: agent.excelRow };
@@ -258,13 +270,11 @@ const Index = () => {
         if (hash) photo.imageHash = hash;
         if (pHash) photo.perceptualHash = pHash;
 
-        // 1) IA generativa tem prioridade máxima sobre duplicidade.
         if (result?.criterios?.gerada_por_ia) {
           const { imageHash, ...analysis } = result;
           photo.analysis = analysis;
           photo.status = 'ai_generated';
         } else {
-          // 2) Duplicata exata (mesmos bytes)
           let dupRef: DupRef | null = null;
           if (hash) {
             const existing = hashMap.get(hash);
@@ -274,7 +284,6 @@ const Index = () => {
               hashMap.set(hash, selfRef);
             }
           }
-          // 3) Quase-duplicata (mesma cena/pessoa, leves diferenças)
           if (!dupRef && pHash) {
             const near = findNearDuplicate(pHash);
             if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) dupRef = near;
@@ -308,19 +317,39 @@ const Index = () => {
       scheduleFlush();
     };
 
-    // Pool dinâmico: dispara até currentConcurrency simultâneas; assim que uma
-    // termina, outra é iniciada imediatamente — sem esperar lotes.
-    while (cursor < tasks.length || inflight.size > 0) {
-      while (inflight.size < currentConcurrency && cursor < tasks.length && !cancelledRef.current) {
+    // Dispatcher: distribui tasks entre os workers, preenchendo aquele com
+    // mais capacidade livre. Cada worker tem seu próprio pacing (~500 RPM).
+    const totalInflight = () => workers.reduce((s, w) => s + w.inflight.size, 0);
+    const allRaces = () => {
+      const ps: Promise<unknown>[] = [];
+      workers.forEach(w => w.inflight.forEach(p => ps.push(p)));
+      return ps;
+    };
+    while (cursor < tasks.length || totalInflight() > 0) {
+      let dispatched = false;
+      while (cursor < tasks.length && !cancelledRef.current) {
+        // escolhe o worker com mais "folga" relativa
+        let best: Worker | null = null;
+        let bestSlack = -Infinity;
+        for (const w of workers) {
+          const slack = w.currentConcurrency - w.inflight.size;
+          if (slack > 0 && slack > bestSlack) { best = w; bestSlack = slack; }
+        }
+        if (!best) break;
         const task = tasks[cursor++];
-        const p = launch(task).finally(() => { inflight.delete(p); });
-        inflight.add(p);
+        const worker = best;
+        const p = launch(worker, task).finally(() => { worker.inflight.delete(p); });
+        worker.inflight.add(p);
+        dispatched = true;
       }
-      if (inflight.size === 0) break;
-      await Promise.race(inflight);
+      if (totalInflight() === 0) break;
+      // espera qualquer worker liberar slot
+      await Promise.race(allRaces());
+      if (!dispatched) { /* loop continua */ }
     }
     clearInterval(flushTimer);
     flush();
+
 
     const wasCancelled = cancelledRef.current;
     setIsAnalyzing(false);
