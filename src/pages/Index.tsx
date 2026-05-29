@@ -17,16 +17,20 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Dois workers paralelos, cada um pacing ~500 RPM em um modelo diferente.
-// Combinado: até ~1000 RPM. Limites são por-modelo na OpenAI, então usar
+// Quatro workers paralelos, cada um pacing ~480 RPM em um modelo diferente.
+// Combinado: até ~1920 RPM. Limites são por-modelo na OpenAI, então usar
 // modelos distintos permite somar os RPMs sem disparar 429.
 const WORKERS = [
   { model: 'gpt-4o-mini', rpm: 480 },
   { model: 'gpt-4.1-mini', rpm: 480 },
+  { model: 'gpt-4.1-nano', rpm: 480 },
+  { model: 'gpt-5-mini', rpm: 480 },
 ] as const;
-const MIN_CONCURRENCY_PER_WORKER = 8;
-const INITIAL_CONCURRENCY_PER_WORKER = 28;
-const MAX_CONCURRENCY_PER_WORKER = 72;
+const MIN_CONCURRENCY_PER_WORKER = 6;
+const INITIAL_CONCURRENCY_PER_WORKER = 20;
+const MAX_CONCURRENCY_PER_WORKER = 60;
+// Limita o índice perceptual para evitar lentidão O(n) crescente em lotes grandes.
+const PHASH_INDEX_MAX = 8000;
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
@@ -202,20 +206,30 @@ const Index = () => {
     tasks.forEach(t => { updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing'; });
     setAgents(updated.slice());
 
-    // Hash map exato (SHA-256) e índice perceptual (aHash) para near-duplicates
+    // Hash map exato (SHA-256) e índice perceptual (aHash) para near-duplicates.
+    // O índice perceptual é uma janela circular (FIFO) para evitar O(n) crescente
+    // que faz a análise ficar mais lenta a cada nova foto.
     type DupRef = { agent: string; company: string; row: number };
     const hashMap = new Map<string, DupRef>();
+    const pHashSet = new Map<string, DupRef>(); // dedup exato de pHash em O(1)
     const pHashIndex: { hash: string; ref: DupRef }[] = [];
     // Pré-popula com fotos já analisadas que tenham hash
     updated.forEach(a => a.photos.forEach(p => {
       const ref: DupRef = { agent: a.name, company: a.companyName, row: a.excelRow };
       if (p.imageHash && p.status === 'done' && !hashMap.has(p.imageHash)) hashMap.set(p.imageHash, ref);
-      if (p.perceptualHash && p.status === 'done') pHashIndex.push({ hash: p.perceptualHash, ref });
+      if (p.perceptualHash && p.status === 'done' && !pHashSet.has(p.perceptualHash)) {
+        pHashSet.set(p.perceptualHash, ref);
+        pHashIndex.push({ hash: p.perceptualHash, ref });
+      }
     }));
+    // Mantém a janela limitada
+    while (pHashIndex.length > PHASH_INDEX_MAX) pHashIndex.shift();
 
     const findNearDuplicate = (h: string): DupRef | null => {
-      for (const entry of pHashIndex) {
-        if (hammingHex(entry.hash, h) <= NEAR_DUPLICATE_THRESHOLD) return entry.ref;
+      const exact = pHashSet.get(h);
+      if (exact) return exact;
+      for (let i = pHashIndex.length - 1; i >= 0; i--) {
+        if (hammingHex(pHashIndex[i].hash, h) <= NEAR_DUPLICATE_THRESHOLD) return pHashIndex[i].ref;
       }
       return null;
     };
@@ -286,8 +300,16 @@ const Index = () => {
           }
           if (!dupRef && pHash) {
             const near = findNearDuplicate(pHash);
-            if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) dupRef = near;
-            else pHashIndex.push({ hash: pHash, ref: selfRef });
+            if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) {
+              dupRef = near;
+            } else if (!pHashSet.has(pHash)) {
+              pHashSet.set(pHash, selfRef);
+              pHashIndex.push({ hash: pHash, ref: selfRef });
+              if (pHashIndex.length > PHASH_INDEX_MAX) {
+                const removed = pHashIndex.shift();
+                if (removed) pHashSet.delete(removed.hash);
+              }
+            }
           }
           if (dupRef) {
             photo.status = 'duplicate';
@@ -431,7 +453,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (2 modelos em paralelo, ~1000 RPM)'}</span>
+                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (4 modelos em paralelo, ~1900 RPM)'}</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />
