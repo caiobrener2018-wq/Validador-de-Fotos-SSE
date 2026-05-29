@@ -210,19 +210,19 @@ serve(async (req) => {
     }
 
     if (!response.ok) {
-      console.error("OpenAI error:", response.status, response.text);
+      console.error("OpenAI error:", model, response.status, response.text);
       if (response.status === 429) {
         if (response.text.includes("insufficient_quota")) {
-          return respond(false, { error: "credits_exhausted", message: "Créditos OpenAI esgotados." });
+          return respond(false, { error: "credits_exhausted", message: "Créditos OpenAI esgotados.", model });
         }
-        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI.", retryAfterMs: parseRetryAfterMs(response.text) });
+        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI.", retryAfterMs: parseRetryAfterMs(response.text), model });
       }
-      if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados." });
-      if (response.status === 400) return respond(false, { error: "bad_request", message: "OpenAI 400: formato de imagem inválido ou URL inacessível." });
-      return respond(false, { error: "ai_error", message: `OpenAI ${response.status}` });
+      if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados.", model });
+      if (response.status === 400) return respond(false, { error: "bad_request", message: "OpenAI 400: formato de imagem inválido ou URL inacessível.", model });
+      return respond(false, { error: "ai_error", message: `OpenAI ${response.status}`, model });
     }
     const content = extractOpenAIContent(response.text);
-    return respond(true, { ...parseJson(content), imageHash });
+    return respond(true, { ...parseJson(content), imageHash, model });
   } catch (e) {
     console.error("Error:", e);
     return respond(false, { error: "unknown", message: e instanceof Error ? e.message : "Erro desconhecido" });
