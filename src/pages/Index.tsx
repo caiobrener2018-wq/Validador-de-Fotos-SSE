@@ -17,16 +17,20 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Dois workers paralelos, cada um pacing ~500 RPM em um modelo diferente.
-// Combinado: até ~1000 RPM. Limites são por-modelo na OpenAI, então usar
+// Quatro workers paralelos, cada um pacing ~480 RPM em um modelo diferente.
+// Combinado: até ~1920 RPM. Limites são por-modelo na OpenAI, então usar
 // modelos distintos permite somar os RPMs sem disparar 429.
 const WORKERS = [
   { model: 'gpt-4o-mini', rpm: 480 },
   { model: 'gpt-4.1-mini', rpm: 480 },
+  { model: 'gpt-4.1-nano', rpm: 480 },
+  { model: 'gpt-5-mini', rpm: 480 },
 ] as const;
-const MIN_CONCURRENCY_PER_WORKER = 8;
-const INITIAL_CONCURRENCY_PER_WORKER = 28;
-const MAX_CONCURRENCY_PER_WORKER = 72;
+const MIN_CONCURRENCY_PER_WORKER = 6;
+const INITIAL_CONCURRENCY_PER_WORKER = 20;
+const MAX_CONCURRENCY_PER_WORKER = 60;
+// Limita o índice perceptual para evitar lentidão O(n) crescente em lotes grandes.
+const PHASH_INDEX_MAX = 8000;
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
