@@ -1,37 +1,73 @@
-## Objetivo
+# Aprimoramentos do Validador de Fotos
 
-Substituir o Lovable AI Gateway pela API paga do OpenAI (segredo `API_CHAT_RENATINHA`) e remover o sistema de workers/concorrência fixa, permitindo throughput máximo limitado apenas pela própria API.
+## 1. Detecção de fotos quase iguais (mesmo ambiente/pessoa)
 
-## Mudanças
+Hoje a deduplicação é por SHA-256 — só pega bytes idênticos. Vou adicionar **perceptual hash (pHash 64-bit)** na edge function `analyze-photo`:
 
-### 1. `supabase/functions/analyze-photo/index.ts`
-- Remover uso de `LOVABLE_API_KEY` e do endpoint `ai.gateway.lovable.dev`.
-- Passar a usar `Deno.env.get("API_CHAT_RENATINHA")` chamando `https://api.openai.com/v1/chat/completions`.
-- Modelo: `gpt-4o-mini` (rápido, multimodal, barato — ideal para alto volume de análise de imagens). Mantém o mesmo formato `image_url` que já está no código.
-- Manter o cálculo de `sha256` para deduplicação e o mesmo schema de resposta JSON (aprovada/criterios/justificativa).
-- Manter mapeamento de erros: 429 → `rate_limit`, 402/insufficient_quota → `credits_exhausted`.
+- Gerar pHash 8x8 DCT a partir da imagem já baixada (sem dependência externa, ~30 linhas de Deno).
+- Retornar `perceptualHash` junto do `imageHash` atual.
+- No `Index.tsx`, manter o mapa de hashes exatos **e** um índice de pHash. Para cada nova foto, calcular distância de Hamming contra os pHash já vistos; se `≤ 6 bits` de diferença → marcar como `duplicate` (com referência ao agente/empresa/linha original, igual hoje).
+- Mantém deduplicação exata como atalho rápido antes de comparar perceptual.
 
-### 2. `supabase/functions/get-key-count/index.ts`
-- Sem função real agora; pode retornar `{ count: 1 }` (uma única API). Será usado apenas para compatibilidade.
+## 2. Detecção de imagens geradas por IA
 
-### 3. `src/pages/Index.tsx` — remover sistema de workers
-- Remover `PER_WORKER_CONCURRENCY`, `keyCount`, `slots` e o loop `Array.from({ length: slots }, worker)`.
-- Substituir por um **pool dinâmico sem limite fixo de workers**: dispara TODAS as tarefas de uma vez em paralelo via `Promise.all(tasks.map(launch))`, deixando o navegador/fetch e a API do OpenAI ditarem o ritmo real.
-  - Alternativa de segurança: limitar a um teto alto (ex.: 100 requisições simultâneas) para evitar travar o navegador com 40 mil fotos disparadas literalmente ao mesmo tempo. **Recomendo esse teto de 100** porque sem nenhum limite o browser pode estourar memória/conexões TCP com planilhas grandes — a API do OpenAI ainda será o gargalo, não o teto.
-- Remover chamada a `get-key-count` e o estado `keyCount`.
-- Remover `keyIndex` (já removido) e qualquer referência a "workers" na UI; mensagem de progresso passa a ser apenas `"Analisando fotos..."`.
-- Manter pausar/cancelar, retry com backoff, throttle de re-render (FLUSH_INTERVAL), dedup por hash.
+- Adicionar novo critério booleano `gerada_por_ia` ao schema de resposta do OpenAI.
+- Ampliar o system prompt para instruir o modelo a procurar artefatos típicos de IA: mãos/dedos deformados, texto ilegível em placas/produtos, simetrias estranhas, iluminação inconsistente, fundo "plástico"/borrado anormal, olhos/orelhas assimétricos, repetição de padrões.
+- Novo `status` no tipo `AgentPhoto`: `'ai_generated'`. Tem prioridade sobre `done`.
+- Novo `FilterType`: `'ai_generated'` ("IA").
+- Card e DashboardSummary ganham badge/contador "IA" (ícone `Sparkles` ou `Bot`, cor roxa).
 
-### 4. Retentativas
-- Manter `analyzeWithRetry` com 8 tentativas e backoff exponencial — importante porque ao disparar 100 em paralelo, vamos bater 429 com frequência e o backoff naturalmente encontra o ritmo sustentável da API.
+## 3. Nova regra de aprovação do atendimento (bloco)
 
-## Pontos técnicos
+Lógica atual: qualquer foto com inconsistência derruba o atendimento. Nova lógica em `AgentCard` e nos filtros do `Index.tsx`:
 
-- **Modelo OpenAI**: `gpt-4o-mini` é o melhor custo/benefício para visão em volume. Se preferir mais precisão posso usar `gpt-4o`, mas é ~10x mais caro e mais lento. Posso deixar configurável via constante no topo do arquivo.
-- **Limite de paralelismo**: 100 simultâneas é o teto sugerido. Se quiser mais agressivo (ex.: 500) ou totalmente sem limite, ajusto.
-- A API do OpenAI tem rate limit por **TPM (tokens por minuto)** e **RPM (requests por minuto)** dependendo do tier da conta. O backoff exponencial nas retentativas vai se auto-ajustar ao limite da sua conta.
+```text
+se alguma foto = ai_generated  → atendimento = "IA"          (prioridade máxima)
+senão se alguma foto = duplicate → atendimento = "Duplicada"
+senão se nenhuma foto tem empresário/funcionário → "Sem empresário"  (ver item 4)
+senão se ao menos uma foto aprovada → "Aprovado"
+senão → "Inconsistência"
+```
 
-## Confirmações que preciso
+Centralizar essa derivação numa função `getAgentStatus(agent)` em `src/lib/agentStatus.ts` para ser reusada por `AgentCard`, `DashboardSummary`, filtros e exports (`exportResults.ts`, `exportImages.ts`).
 
-1. Modelo: **gpt-4o-mini** (recomendado) ou **gpt-4o**?
-2. Teto de paralelismo: **100** simultâneas (recomendado), outro valor, ou sem limite?
+## 4. Novo filtro "Sem empresário"
+
+Hoje o critério `empresario` mistura "agente + empresário". Vou desmembrar no prompt e schema:
+
+- Novos campos em `criterios`: `agente_sebrae` (pessoa que parece ser o consultor/agente) e `empresario_ou_funcionario` (dono/funcionário do estabelecimento).
+- Manter `empresario` como compatibilidade derivada (`agente_sebrae || empresario_ou_funcionario`) para não quebrar lógica antiga durante a transição — ou migrar tudo de uma vez (recomendo migrar).
+- Atendimento marcado como **"Sem empresário"** quando: todas as fotos analisadas têm pessoas mas nenhuma tem `empresario_ou_funcionario = true` (só aparece o agente).
+- Novo `FilterType`: `'no_business_person'`. Badge âmbar/laranja com ícone `UserX`.
+
+## Detalhes técnicos
+
+**Edge function `analyze-photo/index.ts`:**
+- Acrescentar função `perceptualHash(bytes)`: decode JPEG/PNG via `Image` API do Deno? Deno não tem canvas nativo. Alternativa leve: usar `npm:sharp` não funciona no Edge Runtime. Vou usar **`npm:image-hash@5`** ou implementar pHash em JS puro processando os bytes via `npm:@jsquash/jpeg` + `@jsquash/png` (já WASM, suportados em Deno Edge). Se peso for problema, fallback: enviar a imagem 32x32 grayscale para o próprio GPT-4o-mini retornar o pHash junto — mas isso adiciona latência; preferimos WASM local.
+- Expandir prompt e `response_format` (json_object) com os novos campos.
+- Retornar `{ aprovada, criterios:{ fachada, agente_sebrae, empresario_ou_funcionario, interior, fundo_valido, contexto_segmento, gerada_por_ia }, justificativa, imageHash, perceptualHash }`.
+
+**Tipos (`src/types/analysis.ts`):**
+- `PhotoAnalysis.criterios` ganha `agente_sebrae`, `empresario_ou_funcionario`, `gerada_por_ia`.
+- `AgentPhoto.status` ganha `'ai_generated'`.
+- `AgentPhoto.perceptualHash?: string`.
+- `FilterType` ganha `'ai_generated' | 'no_business_person'`.
+
+**`src/pages/Index.tsx`:**
+- Índice `perceptualHashes: Array<{ hash, agent, company, row }>` + função `hamming(a,b)`.
+- Após receber resposta: se `gerada_por_ia` → status `'ai_generated'`; senão checar duplicado exato → perceptual ≤6 → senão `'done'`.
+- Filtros e contadores usam `getAgentStatus`.
+
+**Componentes:**
+- `AgentCard`: novo badge "IA" (roxo) e "Sem empresário" (âmbar); exibir critério `gerada_por_ia` quando true; mostrar `agente_sebrae`/`empresario_ou_funcionario` como badges separados.
+- `DashboardSummary`: dois novos cards — "IA" e "Sem empresário".
+- Barra de filtros no `Index.tsx`: dois novos botões.
+
+**Exports:**
+- `exportResults.ts`: nova coluna "Status do Atendimento" usando `getAgentStatus`; coluna "Gerada por IA".
+- `exportImages.ts`: pastas adicionais `/ia/` e `/sem_empresario/`.
+
+## Pontos para confirmar antes de implementar
+
+- **Limiar de near-duplicate**: `≤ 6 bits` em pHash de 64 bits é o padrão para "praticamente a mesma cena". Confirma ou prefere mais rígido (≤4) / mais frouxo (≤10)?
+- **Distinguir agente Sebrae vs empresário visualmente**: a IA vai inferir pelo contexto (crachá Sebrae, postura de visita, roupas formais de consultor vs avental/uniforme do estabelecimento). Aceitável que possa haver alguma imprecisão? Se quiser sinal mais forte, podemos pedir que o usuário envie nome do agente para o prompt — hoje já temos `agent.name`.
