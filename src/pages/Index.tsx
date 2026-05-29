@@ -4,6 +4,8 @@ import { parseExcelFile } from '@/lib/parseExcel';
 import { exportResultsToExcel } from '@/lib/exportResults';
 import { exportImagesToZip } from '@/lib/exportImages';
 import { supabase } from '@/integrations/supabase/client';
+import { computePerceptualHash, hammingHex, NEAR_DUPLICATE_THRESHOLD } from '@/lib/perceptualHash';
+import { getAgentStatus } from '@/lib/agentStatus';
 import { FileUpload } from '@/components/FileUpload';
 import { DashboardSummary } from '@/components/DashboardSummary';
 import { AgentCard } from '@/components/AgentCard';
@@ -25,10 +27,10 @@ const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
 async function analyzeOnce(
-  photo: { url: string; companyName: string; segment: string }
+  photo: { url: string; companyName: string; segment: string; agentName: string }
 ): Promise<any> {
   const { data } = await supabase.functions.invoke('analyze-photo', {
-    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment },
+    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, agentName: photo.agentName },
   });
   if (data?.ok === false && data.error === 'rate_limit') {
     const err: any = new Error('rate_limit');
@@ -45,7 +47,7 @@ async function analyzeOnce(
 }
 
 async function analyzeWithRetry(
-  photo: { url: string; companyName: string; segment: string },
+  photo: { url: string; companyName: string; segment: string; agentName: string },
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
@@ -189,16 +191,23 @@ const Index = () => {
     tasks.forEach(t => { updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing'; });
     setAgents(updated.slice());
 
-    // Hash map for AI-based dedup (built incrementally)
-    const hashMap = new Map<string, { agent: string; company: string; row: number }>();
-    // Pre-populate from already-done photos with hash
+    // Hash map exato (SHA-256) e índice perceptual (aHash) para near-duplicates
+    type DupRef = { agent: string; company: string; row: number };
+    const hashMap = new Map<string, DupRef>();
+    const pHashIndex: { hash: string; ref: DupRef }[] = [];
+    // Pré-popula com fotos já analisadas que tenham hash
     updated.forEach(a => a.photos.forEach(p => {
-      if (p.imageHash && p.status === 'done') {
-        if (!hashMap.has(p.imageHash)) {
-          hashMap.set(p.imageHash, { agent: a.name, company: a.companyName, row: a.excelRow });
-        }
-      }
+      const ref: DupRef = { agent: a.name, company: a.companyName, row: a.excelRow };
+      if (p.imageHash && p.status === 'done' && !hashMap.has(p.imageHash)) hashMap.set(p.imageHash, ref);
+      if (p.perceptualHash && p.status === 'done') pHashIndex.push({ hash: p.perceptualHash, ref });
     }));
+
+    const findNearDuplicate = (h: string): DupRef | null => {
+      for (const entry of pHashIndex) {
+        if (hammingHex(entry.hash, h) <= NEAR_DUPLICATE_THRESHOLD) return entry.ref;
+      }
+      return null;
+    };
 
     let done = 0;
     let cursor = 0;
@@ -217,35 +226,58 @@ const Index = () => {
       const agent = updated[task.agentIdx];
       const photo = agent.photos[task.photoIdx];
       try {
-        const result = await analyzeWithRetry({
+        // Dispara análise e hash perceptual em paralelo.
+        const analysisPromise = analyzeWithRetry({
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
+          agentName: agent.name,
         }, shouldStop, waitIfPaused, onRateLimit, waitForStartSlot);
+        const pHashPromise = computePerceptualHash(photo.url).catch(() => null);
+
+        const [result, pHash] = await Promise.all([analysisPromise, pHashPromise]);
         stableCompletions++;
         if (stableCompletions >= 30 && currentConcurrency < MAX_CONCURRENCY) {
           currentConcurrency++;
           stableCompletions = 0;
         }
 
-        // AI-based dedup via image hash
+        const selfRef: DupRef = { agent: agent.name, company: agent.companyName, row: agent.excelRow };
         const hash = result.imageHash as string | undefined;
-        if (hash) {
-          photo.imageHash = hash;
-          const existing = hashMap.get(hash);
-          if (existing && !(existing.agent === agent.name && existing.row === agent.excelRow && agent.photos.indexOf(photo) === task.photoIdx)) {
+        if (hash) photo.imageHash = hash;
+        if (pHash) photo.perceptualHash = pHash;
+
+        // 1) IA generativa tem prioridade máxima sobre duplicidade.
+        if (result?.criterios?.gerada_por_ia) {
+          const { imageHash, ...analysis } = result;
+          photo.analysis = analysis;
+          photo.status = 'ai_generated';
+        } else {
+          // 2) Duplicata exata (mesmos bytes)
+          let dupRef: DupRef | null = null;
+          if (hash) {
+            const existing = hashMap.get(hash);
+            if (existing && !(existing.agent === selfRef.agent && existing.row === selfRef.row)) {
+              dupRef = existing;
+            } else if (!existing) {
+              hashMap.set(hash, selfRef);
+            }
+          }
+          // 3) Quase-duplicata (mesma cena/pessoa, leves diferenças)
+          if (!dupRef && pHash) {
+            const near = findNearDuplicate(pHash);
+            if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) dupRef = near;
+            else pHashIndex.push({ hash: pHash, ref: selfRef });
+          }
+          if (dupRef) {
             photo.status = 'duplicate';
             photo.duplicate = true;
-            photo.duplicateOf = existing;
+            photo.duplicateOf = dupRef;
           } else {
-            hashMap.set(hash, { agent: agent.name, company: agent.companyName, row: agent.excelRow });
             const { imageHash, ...analysis } = result;
             photo.analysis = analysis;
             photo.status = 'done';
           }
-        } else {
-          photo.analysis = result;
-          photo.status = 'done';
         }
       } catch (err: any) {
         if (err?.cancelled) {
@@ -305,13 +337,14 @@ const Index = () => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
     if (agencyFilter !== 'all' && agent.agency !== agencyFilter) return false;
     if (filter === 'all') return true;
-    const noPhotos = agent.photos.length === 0;
-    if (filter === 'no_photos') return noPhotos;
-    if (filter === 'duplicate') return agent.photos.some(p => p.status === 'duplicate');
-    const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
-    if (!noPhotos && !allDone) return true;
-    const hasInconsistency = noPhotos || agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
-    return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
+    const status = getAgentStatus(agent);
+    if (filter === 'no_photos') return status === 'no_photos';
+    if (filter === 'duplicate') return status === 'duplicate';
+    if (filter === 'ai_generated') return status === 'ai_generated';
+    if (filter === 'no_business_person') return status === 'no_business_person';
+    if (filter === 'approved') return status === 'approved';
+    if (filter === 'inconsistent') return status === 'inconsistent';
+    return true;
   }), [agents, agentFilter, agencyFilter, filter]);
   const visibleAgents = useMemo(() => filteredAgents.slice(0, visibleCount), [filteredAgents, visibleCount]);
 
@@ -443,9 +476,11 @@ const Index = () => {
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 {([
                   { v: 'all', label: 'Todas' },
-                  { v: 'approved', label: 'Aprovadas' },
+                  { v: 'approved', label: 'Aprovados' },
                   { v: 'inconsistent', label: 'Inconsistências' },
                   { v: 'duplicate', label: 'Duplicadas' },
+                  { v: 'ai_generated', label: 'IA' },
+                  { v: 'no_business_person', label: 'Sem empresário' },
                   { v: 'no_photos', label: 'Sem fotos' },
                 ] as { v: FilterType; label: string }[]).map(f => (
                   <Button key={f.v} variant={filter === f.v ? 'default' : 'ghost'} size="sm" onClick={() => setFilter(f.v)}>

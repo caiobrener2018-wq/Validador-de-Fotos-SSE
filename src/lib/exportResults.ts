@@ -1,5 +1,6 @@
 import { AgentData } from '@/types/analysis';
 import { fetchImageViaProxy } from './exportImages';
+import { getAgentStatus, AGENT_STATUS_LABEL } from './agentStatus';
 
 async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -53,21 +54,14 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
     const row = ws.getRow(rowNum);
     row.height = 110;
 
-    const noPhotos = agent.photos.length === 0;
-    const allDuplicate = !noPhotos && agent.photos.every(p => p.status === 'duplicate');
-    const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'duplicate');
-    const anyInconsistent = agent.photos.some(p => p.analysis && !p.analysis.aprovada);
-    const anyDuplicate = agent.photos.some(p => p.status === 'duplicate');
-    const anyError = agent.photos.some(p => p.status === 'error');
-    let status = 'PENDENTE';
-    if (noPhotos) status = 'NÃO POSSUI FOTOS';
-    else if (allDuplicate) status = 'FOTOS DUPLICADAS';
-    else if (allDone && !anyInconsistent && !anyDuplicate) status = 'APROVADA';
-    else if (anyInconsistent || anyDuplicate) status = 'INCONSISTÊNCIA';
-    else if (anyError) status = 'ERRO';
+    const status = getAgentStatus(agent);
+    const statusLabel = AGENT_STATUS_LABEL[status].toUpperCase();
 
     const justificativas = agent.photos
       .map((p, idx) => {
+        if (p.status === 'ai_generated') {
+          return `Foto ${idx + 1}: GERADA POR IA${p.analysis?.justificativa ? ` — ${p.analysis.justificativa}` : ''}`;
+        }
         if (p.status === 'duplicate') {
           return `Foto ${idx + 1}: DUPLICADA${p.duplicateOf ? ` (já enviada por ${p.duplicateOf.agent} - ${p.duplicateOf.company}, linha ${p.duplicateOf.row})` : ''}`;
         }
@@ -76,14 +70,14 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
         return '';
       })
       .filter(Boolean)
-      .join('\n') || (noPhotos ? 'Agente não enviou fotos para este atendimento.' : '');
+      .join('\n') || (status === 'no_photos' ? 'Agente não enviou fotos para este atendimento.' : '');
 
     row.getCell('row').value = agent.excelRow;
     row.getCell('agent').value = agent.name;
     row.getCell('agency').value = agent.agency;
     row.getCell('company').value = agent.companyName;
     row.getCell('segment').value = agent.segment;
-    row.getCell('status').value = status;
+    row.getCell('status').value = statusLabel;
     row.getCell('just').value = justificativas;
     row.getCell('just').alignment = { wrapText: true, vertical: 'top' };
     row.alignment = { vertical: 'middle' };
@@ -92,18 +86,18 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
     const statusCell = row.getCell('status');
     statusCell.alignment = { horizontal: 'center', vertical: 'middle' };
     statusCell.font = { bold: true };
-    if (status === 'APROVADA') {
-      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
-      statusCell.font = { bold: true, color: { argb: 'FF065F46' } };
-    } else if (status === 'INCONSISTÊNCIA') {
-      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
-      statusCell.font = { bold: true, color: { argb: 'FF991B1B' } };
-    } else if (status === 'NÃO POSSUI FOTOS') {
-      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
-      statusCell.font = { bold: true, color: { argb: 'FF92400E' } };
-    } else if (status === 'FOTOS DUPLICADAS') {
-      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFEDD5' } };
-      statusCell.font = { bold: true, color: { argb: 'FF9A3412' } };
+    const palette: Record<string, { bg: string; fg: string }> = {
+      approved: { bg: 'FFD1FAE5', fg: 'FF065F46' },
+      inconsistent: { bg: 'FFFEE2E2', fg: 'FF991B1B' },
+      no_photos: { bg: 'FFFEF3C7', fg: 'FF92400E' },
+      duplicate: { bg: 'FFFFEDD5', fg: 'FF9A3412' },
+      ai_generated: { bg: 'FFEDE9FE', fg: 'FF5B21B6' },
+      no_business_person: { bg: 'FFFEF3C7', fg: 'FF92400E' },
+    };
+    const colors = palette[status];
+    if (colors) {
+      statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: colors.bg } };
+      statusCell.font = { bold: true, color: { argb: colors.fg } };
     }
 
     // Embed photos in cells (Foto 1, Foto 2, Foto 3 -> columns 6,7,8)

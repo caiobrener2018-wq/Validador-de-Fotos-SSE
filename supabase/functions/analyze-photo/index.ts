@@ -56,50 +56,82 @@ async function sha256(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-function buildSystemPrompt(companyName: string, segment: string): string {
-  const contextInfo = (companyName || segment)
+function buildSystemPrompt(companyName: string, segment: string, agentName: string): string {
+  const contextInfo = (companyName || segment || agentName)
     ? `\n\nCONTEXTO DA VISITA:
-- Empresa: ${companyName || 'Não informado'}
+- Agente Sebrae responsável: ${agentName || 'Não informado'}
+- Empresa visitada: ${companyName || 'Não informado'}
 - Segmento: ${segment || 'Não informado'}
 
-Use essas informações para verificar se o conteúdo visual da foto é compatível com o segmento da empresa.`
+Use essas informações para verificar se o conteúdo visual é compatível com o segmento da empresa.`
     : '';
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
-Critérios booleanos:
-1 fachada: fachada, marca ou logotipo de estabelecimento.
-2 empresario: pessoas em reunião/atendimento profissional.
-3 interior: ambiente comercial interno com produtos, balcão, escritório, oficina ou equipamentos.
-4 fundo_valido: rejeite parede lisa/branca ou fundo sem contexto comercial.
-5 contexto_segmento: imagem compatível com empresa/segmento informado.
-${contextInfo}
 
-Aprovada = (fachada OU empresario OU interior) E fundo_valido E contexto_segmento.
+Critérios booleanos (true/false):
+1 fachada: fachada, marca ou logotipo do estabelecimento visível.
+2 agente_sebrae: aparece o consultor/agente Sebrae (visitante externo — crachá, pasta, roupa social/uniforme institucional, postura de visita).
+3 empresario_ou_funcionario: aparece o empresário, sócio ou funcionário do próprio estabelecimento (uniforme da loja, avental, atrás do balcão, operando equipamento, atendendo cliente).
+4 interior: ambiente comercial interno (produtos, balcão, escritório, oficina, equipamentos).
+5 fundo_valido: rejeite parede lisa/branca, fundo neutro ou sem contexto comercial.
+6 contexto_segmento: imagem compatível com o segmento informado.
+7 gerada_por_ia: indícios de imagem gerada/editada por IA — mãos/dedos deformados, texto ilegível em placas/produtos, simetria antinatural, iluminação inconsistente, fundo "plástico", olhos/orelhas assimétricos, repetição de padrões. Seja conservador: marque true só com indícios claros.
 
-Responda apenas JSON válido:
+Aprovada = (fachada OU agente_sebrae OU empresario_ou_funcionario OU interior) E fundo_valido E contexto_segmento E NÃO gerada_por_ia.
+
+Responda APENAS JSON válido:
 {
   "aprovada": true,
   "criterios": {
     "fachada": true,
-    "empresario": false,
+    "agente_sebrae": false,
+    "empresario_ou_funcionario": true,
     "interior": true,
     "fundo_valido": true,
-    "contexto_segmento": true
+    "contexto_segmento": true,
+    "gerada_por_ia": false
   },
-  "justificativa": "Explicação breve"
-}`;
+  "justificativa": "Explicação breve em 1-2 frases"
+}${contextInfo}`;
+}
+
+const EMPTY_CRITERIA = {
+  fachada: false,
+  agente_sebrae: false,
+  empresario_ou_funcionario: false,
+  interior: false,
+  fundo_valido: false,
+  contexto_segmento: false,
+  gerada_por_ia: false,
+};
+
+function normalize(raw: any) {
+  const c = (raw && typeof raw === "object" && raw.criterios) || {};
+  const criterios = {
+    fachada: !!c.fachada,
+    agente_sebrae: !!(c.agente_sebrae ?? c.agente),
+    empresario_ou_funcionario: !!(c.empresario_ou_funcionario ?? c.empresario),
+    interior: !!c.interior,
+    fundo_valido: !!c.fundo_valido,
+    contexto_segmento: !!c.contexto_segmento,
+    gerada_por_ia: !!c.gerada_por_ia,
+  };
+  return {
+    aprovada: !!raw?.aprovada && !criterios.gerada_por_ia,
+    criterios,
+    justificativa: typeof raw?.justificativa === "string" ? raw.justificativa : "",
+  };
 }
 
 function parseJson(text: string) {
   try {
-    return JSON.parse(text);
+    return normalize(JSON.parse(text));
   } catch {
     const m = text.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : {
-      aprovada: false,
-      criterios: { fachada: false, empresario: false, interior: false, fundo_valido: false, contexto_segmento: false },
-      justificativa: "Não foi possível analisar a imagem.",
-    };
+    if (m) {
+      try { return normalize(JSON.parse(m[0])); } catch { /* fallthrough */ }
+    }
+    return { aprovada: false, criterios: { ...EMPTY_CRITERIA }, justificativa: "Não foi possível analisar a imagem." };
   }
 }
 
@@ -149,13 +181,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { imageUrl, companyName, segment } = await req.json();
+    const { imageUrl, companyName, segment, agentName } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
     const openaiKey = Deno.env.get("API_CHAT_RENATINHA");
     if (!openaiKey) return respond(false, { error: "no_keys", message: "API_CHAT_RENATINHA não configurada" });
 
-    const systemPrompt = buildSystemPrompt(companyName || "", segment || "");
+    const systemPrompt = buildSystemPrompt(companyName || "", segment || "", agentName || "");
 
     // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
     let bytes: Uint8Array;
