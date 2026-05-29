@@ -105,6 +105,15 @@ function AgentCardImpl({ agent }: Props) {
                     <Loader2 className="h-3 w-3 animate-spin" /> Analisando...
                   </div>
                 )}
+                {photo.status === 'ai_generated' && (
+                  <div className="space-y-1">
+                    <div className="flex items-start gap-1 text-sm text-purple-700">
+                      <Sparkles className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                      <span>Imagem com indícios de IA generativa</span>
+                    </div>
+                    {photo.analysis?.justificativa && <p className="text-xs text-muted-foreground">{photo.analysis.justificativa}</p>}
+                  </div>
+                )}
                 {photo.status === 'error' && (
                   <div className="flex items-center gap-1 text-sm text-destructive">
                     <AlertTriangle className="h-3 w-3" /> {photo.error || 'Erro na análise'}
@@ -124,7 +133,12 @@ function AgentCardImpl({ agent }: Props) {
                     </div>
                     <div className="flex gap-1 flex-wrap">
                       {photo.analysis.criterios.fachada && <Badge variant="outline" className="text-xs">Fachada</Badge>}
-                      {photo.analysis.criterios.empresario && <Badge variant="outline" className="text-xs">Empresário</Badge>}
+                      {photo.analysis.criterios.agente_sebrae && <Badge variant="outline" className="text-xs">Agente Sebrae</Badge>}
+                      {photo.analysis.criterios.empresario_ou_funcionario ? (
+                        <Badge variant="outline" className="text-xs border-green-500 text-green-700">Empresário/Funcionário</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs border-amber-500 text-amber-700">Sem empresário</Badge>
+                      )}
                       {photo.analysis.criterios.interior && <Badge variant="outline" className="text-xs">Interior</Badge>}
                       {photo.analysis.criterios.fundo_valido ? (
                         <Badge variant="outline" className="text-xs border-green-500 text-green-700">Fundo OK</Badge>
