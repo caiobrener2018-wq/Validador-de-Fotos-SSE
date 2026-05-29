@@ -1,9 +1,10 @@
 import { useState, memo, type CSSProperties } from 'react';
 import { AgentData } from '@/types/analysis';
+import { getAgentStatus } from '@/lib/agentStatus';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { CheckCircle, XCircle, Loader2, AlertTriangle, Copy } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, AlertTriangle, Copy, Sparkles, UserX } from 'lucide-react';
 
 interface Props {
   agent: AgentData;
@@ -43,15 +44,19 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
 function AgentCardImpl({ agent }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const renderHint = { contentVisibility: 'auto', containIntrinsicSize: '260px' } as CSSProperties;
-  const noPhotos = agent.photos.length === 0;
-  const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
-  const hasInconsistency = agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
-  const isAnalyzing = agent.photos.some(p => p.status === 'analyzing');
-  const allDuplicate = !noPhotos && agent.photos.every(p => p.status === 'duplicate');
+  const status = getAgentStatus(agent);
+  const isAnalyzing = status === 'analyzing';
+
+  const borderClass =
+    status === 'ai_generated' ? 'border-purple-500/60' :
+    status === 'duplicate' ? 'border-orange-500/50' :
+    status === 'no_business_person' ? 'border-amber-500/50' :
+    status === 'inconsistent' ? 'border-destructive/50' :
+    '';
 
   return (
     <>
-      <Card className={hasInconsistency && allDone ? 'border-destructive/50' : ''} style={renderHint}>
+      <Card className={borderClass} style={renderHint}>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="min-w-0">
@@ -59,15 +64,17 @@ function AgentCardImpl({ agent }: Props) {
               {agent.agency && <p className="text-xs font-medium text-primary truncate">{agent.agency}</p>}
               <p className="text-sm text-muted-foreground truncate">{agent.companyName}{agent.segment ? ` • ${agent.segment}` : ''} <span className="text-muted-foreground/60">• Linha {agent.excelRow}</span></p>
             </div>
-            {noPhotos && <Badge variant="outline" className="border-amber-500 text-amber-700"><AlertTriangle className="h-3 w-3 mr-1" />Não possui fotos</Badge>}
-            {!noPhotos && allDuplicate && <Badge variant="outline" className="border-orange-500 text-orange-700"><Copy className="h-3 w-3 mr-1" />Fotos duplicadas</Badge>}
-            {!noPhotos && isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
-            {allDone && !hasInconsistency && <Badge className="bg-green-600 hover:bg-green-700 text-white">Aprovado</Badge>}
-            {allDone && hasInconsistency && !allDuplicate && <Badge variant="destructive">Inconsistência</Badge>}
+            {status === 'no_photos' && <Badge variant="outline" className="border-amber-500 text-amber-700"><AlertTriangle className="h-3 w-3 mr-1" />Não possui fotos</Badge>}
+            {status === 'ai_generated' && <Badge variant="outline" className="border-purple-500 text-purple-700"><Sparkles className="h-3 w-3 mr-1" />IA</Badge>}
+            {status === 'duplicate' && <Badge variant="outline" className="border-orange-500 text-orange-700"><Copy className="h-3 w-3 mr-1" />Duplicada</Badge>}
+            {status === 'no_business_person' && <Badge variant="outline" className="border-amber-500 text-amber-700"><UserX className="h-3 w-3 mr-1" />Sem empresário</Badge>}
+            {isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
+            {status === 'approved' && <Badge className="bg-green-600 hover:bg-green-700 text-white">Aprovado</Badge>}
+            {status === 'inconsistent' && <Badge variant="destructive">Inconsistência</Badge>}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          {noPhotos && (
+          {status === 'no_photos' && (
             <div className="rounded-md border border-amber-500/40 bg-amber-50 dark:bg-amber-950/20 p-3 text-sm text-amber-700 dark:text-amber-400 flex items-center gap-2">
               <AlertTriangle className="h-4 w-4" /> Este atendimento não possui fotos enviadas pelo agente.
             </div>
