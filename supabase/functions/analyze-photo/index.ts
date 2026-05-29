@@ -5,7 +5,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const OPENAI_MODEL = "gpt-4o-mini";
+const DEFAULT_MODEL = "gpt-4o-mini";
+const ALLOWED_MODELS = new Set(["gpt-4o-mini", "gpt-4.1-mini", "gpt-4o", "gpt-4.1"]);
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const DEFAULT_RETRY_AFTER_MS = 3000;
 
@@ -143,12 +144,12 @@ function parseRetryAfterMs(text: string): number {
   return DEFAULT_RETRY_AFTER_MS;
 }
 
-async function callOpenAI(openaiKey: string, systemPrompt: string, companyName: string, imageUrl: string) {
+async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, imageUrl: string) {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
@@ -181,12 +182,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { imageUrl, companyName, segment, agentName } = await req.json();
+    const { imageUrl, companyName, segment, agentName, model: requestedModel } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
     const openaiKey = Deno.env.get("API_CHAT_RENATINHA");
     if (!openaiKey) return respond(false, { error: "no_keys", message: "API_CHAT_RENATINHA não configurada" });
 
+    const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL;
     const systemPrompt = buildSystemPrompt(companyName || "", segment || "", agentName || "");
 
     // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
@@ -202,25 +204,25 @@ serve(async (req) => {
     const imageHash = await sha256(bytes);
     const dataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
 
-    let response = await callOpenAI(openaiKey, systemPrompt, companyName || "", imageUrl);
+    let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", imageUrl);
     if (!response.ok && response.status === 400) {
-      response = await callOpenAI(openaiKey, systemPrompt, companyName || "", dataUrl);
+      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", dataUrl);
     }
 
     if (!response.ok) {
-      console.error("OpenAI error:", response.status, response.text);
+      console.error("OpenAI error:", model, response.status, response.text);
       if (response.status === 429) {
         if (response.text.includes("insufficient_quota")) {
-          return respond(false, { error: "credits_exhausted", message: "Créditos OpenAI esgotados." });
+          return respond(false, { error: "credits_exhausted", message: "Créditos OpenAI esgotados.", model });
         }
-        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI.", retryAfterMs: parseRetryAfterMs(response.text) });
+        return respond(false, { error: "rate_limit", message: "Rate limit OpenAI.", retryAfterMs: parseRetryAfterMs(response.text), model });
       }
-      if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados." });
-      if (response.status === 400) return respond(false, { error: "bad_request", message: "OpenAI 400: formato de imagem inválido ou URL inacessível." });
-      return respond(false, { error: "ai_error", message: `OpenAI ${response.status}` });
+      if (response.status === 402) return respond(false, { error: "credits_exhausted", message: "Créditos esgotados.", model });
+      if (response.status === 400) return respond(false, { error: "bad_request", message: "OpenAI 400: formato de imagem inválido ou URL inacessível.", model });
+      return respond(false, { error: "ai_error", message: `OpenAI ${response.status}`, model });
     }
     const content = extractOpenAIContent(response.text);
-    return respond(true, { ...parseJson(content), imageHash });
+    return respond(true, { ...parseJson(content), imageHash, model });
   } catch (e) {
     console.error("Error:", e);
     return respond(false, { error: "unknown", message: e instanceof Error ? e.message : "Erro desconhecido" });

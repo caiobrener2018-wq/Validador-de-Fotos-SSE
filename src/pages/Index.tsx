@@ -17,20 +17,25 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Fila contínua adaptativa para OpenAI: respeita ~500 RPM sem formar lotes.
-const OPENAI_RPM_LIMIT = 480;
-const START_INTERVAL_MS = Math.ceil(60_000 / OPENAI_RPM_LIMIT);
-const MIN_CONCURRENCY = 12;
-const INITIAL_CONCURRENCY = 40;
-const MAX_CONCURRENCY = 96;
+// Dois workers paralelos, cada um pacing ~500 RPM em um modelo diferente.
+// Combinado: até ~1000 RPM. Limites são por-modelo na OpenAI, então usar
+// modelos distintos permite somar os RPMs sem disparar 429.
+const WORKERS = [
+  { model: 'gpt-4o-mini', rpm: 480 },
+  { model: 'gpt-4.1-mini', rpm: 480 },
+] as const;
+const MIN_CONCURRENCY_PER_WORKER = 8;
+const INITIAL_CONCURRENCY_PER_WORKER = 28;
+const MAX_CONCURRENCY_PER_WORKER = 72;
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
 async function analyzeOnce(
-  photo: { url: string; companyName: string; segment: string; agentName: string }
+  photo: { url: string; companyName: string; segment: string; agentName: string },
+  model: string,
 ): Promise<any> {
   const { data } = await supabase.functions.invoke('analyze-photo', {
-    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, agentName: photo.agentName },
+    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, agentName: photo.agentName, model },
   });
   if (data?.ok === false && data.error === 'rate_limit') {
     const err: any = new Error('rate_limit');
@@ -48,6 +53,7 @@ async function analyzeOnce(
 
 async function analyzeWithRetry(
   photo: { url: string; companyName: string; segment: string; agentName: string },
+  model: string,
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
@@ -70,7 +76,7 @@ async function analyzeWithRetry(
     if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
     try {
       await waitForStartSlot();
-      return await analyzeOnce(photo);
+      return await analyzeOnce(photo, model);
     } catch (err: any) {
       if (err?.cancelled) throw err;
       if (attempt >= maxRetries) throw err;
@@ -128,8 +134,6 @@ const Index = () => {
         await new Promise(r => setTimeout(r, 250));
       }
     };
-    let nextStartAt = 0;
-    let startQueue = Promise.resolve();
     const pacedDelay = async (ms: number) => {
       let remaining = ms;
       while (remaining > 0) {
@@ -140,14 +144,21 @@ const Index = () => {
         remaining -= step;
       }
     };
-    const waitForStartSlot = () => {
-      const turn = startQueue.then(async () => {
-        const waitMs = Math.max(0, nextStartAt - Date.now());
-        if (waitMs > 0) await pacedDelay(waitMs);
-        nextStartAt = Date.now() + START_INTERVAL_MS;
-      });
-      startQueue = turn.catch(() => undefined);
-      return turn;
+    // Um pacing independente por worker/modelo: cada um respeita seus ~500 RPM.
+    const makePacer = (rpm: number) => {
+      const intervalMs = Math.ceil(60_000 / rpm);
+      let nextStartAt = 0;
+      let startQueue: Promise<void> = Promise.resolve();
+      const waitForStartSlot = () => {
+        const turn = startQueue.then(async () => {
+          const waitMs = Math.max(0, nextStartAt - Date.now());
+          if (waitMs > 0) await pacedDelay(waitMs);
+          nextStartAt = Date.now() + intervalMs;
+        });
+        startQueue = turn.catch(() => undefined);
+        return turn;
+      };
+      return waitForStartSlot;
     };
 
     // Clone top-level array; agent objects are cloned on update for memo to work
@@ -211,35 +222,47 @@ const Index = () => {
 
     let done = 0;
     let cursor = 0;
-    const inflight = new Set<Promise<void>>();
-    let currentConcurrency = INITIAL_CONCURRENCY;
-    let stableCompletions = 0;
     let lastProgress = -1;
 
-    const onRateLimit = (retryAfterMs: number) => {
-      currentConcurrency = Math.max(MIN_CONCURRENCY, Math.floor(currentConcurrency * 0.65));
-      stableCompletions = 0;
-      console.info(`OpenAI rate limit: reduzindo paralelismo para ${currentConcurrency}. Retry em ${retryAfterMs}ms.`);
+    // Estado por worker (cada um = um modelo OpenAI com seu próprio RPM).
+    type Worker = {
+      model: string;
+      pacer: () => Promise<void>;
+      inflight: Set<Promise<void>>;
+      currentConcurrency: number;
+      stableCompletions: number;
+    };
+    const workers: Worker[] = WORKERS.map(w => ({
+      model: w.model,
+      pacer: makePacer(w.rpm),
+      inflight: new Set<Promise<void>>(),
+      currentConcurrency: INITIAL_CONCURRENCY_PER_WORKER,
+      stableCompletions: 0,
+    }));
+
+    const onRateLimit = (worker: Worker, retryAfterMs: number) => {
+      worker.currentConcurrency = Math.max(MIN_CONCURRENCY_PER_WORKER, Math.floor(worker.currentConcurrency * 0.65));
+      worker.stableCompletions = 0;
+      console.info(`OpenAI rate limit (${worker.model}): reduzindo paralelismo para ${worker.currentConcurrency}. Retry em ${retryAfterMs}ms.`);
     };
 
-    const launch = async (task: { agentIdx: number; photoIdx: number }) => {
+    const launch = async (worker: Worker, task: { agentIdx: number; photoIdx: number }) => {
       const agent = updated[task.agentIdx];
       const photo = agent.photos[task.photoIdx];
       try {
-        // Dispara análise e hash perceptual em paralelo.
         const analysisPromise = analyzeWithRetry({
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
           agentName: agent.name,
-        }, shouldStop, waitIfPaused, onRateLimit, waitForStartSlot);
+        }, worker.model, shouldStop, waitIfPaused, (ms) => onRateLimit(worker, ms), worker.pacer);
         const pHashPromise = computePerceptualHash(photo.url).catch(() => null);
 
         const [result, pHash] = await Promise.all([analysisPromise, pHashPromise]);
-        stableCompletions++;
-        if (stableCompletions >= 30 && currentConcurrency < MAX_CONCURRENCY) {
-          currentConcurrency++;
-          stableCompletions = 0;
+        worker.stableCompletions++;
+        if (worker.stableCompletions >= 30 && worker.currentConcurrency < MAX_CONCURRENCY_PER_WORKER) {
+          worker.currentConcurrency++;
+          worker.stableCompletions = 0;
         }
 
         const selfRef: DupRef = { agent: agent.name, company: agent.companyName, row: agent.excelRow };
@@ -247,13 +270,11 @@ const Index = () => {
         if (hash) photo.imageHash = hash;
         if (pHash) photo.perceptualHash = pHash;
 
-        // 1) IA generativa tem prioridade máxima sobre duplicidade.
         if (result?.criterios?.gerada_por_ia) {
           const { imageHash, ...analysis } = result;
           photo.analysis = analysis;
           photo.status = 'ai_generated';
         } else {
-          // 2) Duplicata exata (mesmos bytes)
           let dupRef: DupRef | null = null;
           if (hash) {
             const existing = hashMap.get(hash);
@@ -263,7 +284,6 @@ const Index = () => {
               hashMap.set(hash, selfRef);
             }
           }
-          // 3) Quase-duplicata (mesma cena/pessoa, leves diferenças)
           if (!dupRef && pHash) {
             const near = findNearDuplicate(pHash);
             if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) dupRef = near;
@@ -297,19 +317,39 @@ const Index = () => {
       scheduleFlush();
     };
 
-    // Pool dinâmico: dispara até currentConcurrency simultâneas; assim que uma
-    // termina, outra é iniciada imediatamente — sem esperar lotes.
-    while (cursor < tasks.length || inflight.size > 0) {
-      while (inflight.size < currentConcurrency && cursor < tasks.length && !cancelledRef.current) {
+    // Dispatcher: distribui tasks entre os workers, preenchendo aquele com
+    // mais capacidade livre. Cada worker tem seu próprio pacing (~500 RPM).
+    const totalInflight = () => workers.reduce((s, w) => s + w.inflight.size, 0);
+    const allRaces = () => {
+      const ps: Promise<unknown>[] = [];
+      workers.forEach(w => w.inflight.forEach(p => ps.push(p)));
+      return ps;
+    };
+    while (cursor < tasks.length || totalInflight() > 0) {
+      let dispatched = false;
+      while (cursor < tasks.length && !cancelledRef.current) {
+        // escolhe o worker com mais "folga" relativa
+        let best: Worker | null = null;
+        let bestSlack = -Infinity;
+        for (const w of workers) {
+          const slack = w.currentConcurrency - w.inflight.size;
+          if (slack > 0 && slack > bestSlack) { best = w; bestSlack = slack; }
+        }
+        if (!best) break;
         const task = tasks[cursor++];
-        const p = launch(task).finally(() => { inflight.delete(p); });
-        inflight.add(p);
+        const worker = best;
+        const p = launch(worker, task).finally(() => { worker.inflight.delete(p); });
+        worker.inflight.add(p);
+        dispatched = true;
       }
-      if (inflight.size === 0) break;
-      await Promise.race(inflight);
+      if (totalInflight() === 0) break;
+      // espera qualquer worker liberar slot
+      await Promise.race(allRaces());
+      if (!dispatched) { /* loop continua */ }
     }
     clearInterval(flushTimer);
     flush();
+
 
     const wasCancelled = cancelledRef.current;
     setIsAnalyzing(false);
@@ -391,7 +431,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (fila contínua até 500 RPM)'}</span>
+                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (2 modelos em paralelo, ~1000 RPM)'}</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />
