@@ -300,8 +300,16 @@ const Index = () => {
           }
           if (!dupRef && pHash) {
             const near = findNearDuplicate(pHash);
-            if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) dupRef = near;
-            else pHashIndex.push({ hash: pHash, ref: selfRef });
+            if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) {
+              dupRef = near;
+            } else if (!pHashSet.has(pHash)) {
+              pHashSet.set(pHash, selfRef);
+              pHashIndex.push({ hash: pHash, ref: selfRef });
+              if (pHashIndex.length > PHASH_INDEX_MAX) {
+                const removed = pHashIndex.shift();
+                if (removed) pHashSet.delete(removed.hash);
+              }
+            }
           }
           if (dupRef) {
             photo.status = 'duplicate';
