@@ -181,13 +181,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { imageUrl, companyName, segment } = await req.json();
+    const { imageUrl, companyName, segment, agentName } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
     const openaiKey = Deno.env.get("API_CHAT_RENATINHA");
     if (!openaiKey) return respond(false, { error: "no_keys", message: "API_CHAT_RENATINHA não configurada" });
 
-    const systemPrompt = buildSystemPrompt(companyName || "", segment || "");
+    const systemPrompt = buildSystemPrompt(companyName || "", segment || "", agentName || "");
 
     // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
     let bytes: Uint8Array;
