@@ -337,13 +337,14 @@ const Index = () => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
     if (agencyFilter !== 'all' && agent.agency !== agencyFilter) return false;
     if (filter === 'all') return true;
-    const noPhotos = agent.photos.length === 0;
-    if (filter === 'no_photos') return noPhotos;
-    if (filter === 'duplicate') return agent.photos.some(p => p.status === 'duplicate');
-    const allDone = !noPhotos && agent.photos.every(p => p.status === 'done' || p.status === 'error' || p.status === 'duplicate');
-    if (!noPhotos && !allDone) return true;
-    const hasInconsistency = noPhotos || agent.photos.some(p => (p.analysis && !p.analysis.aprovada) || p.status === 'duplicate');
-    return filter === 'inconsistent' ? hasInconsistency : !hasInconsistency;
+    const status = getAgentStatus(agent);
+    if (filter === 'no_photos') return status === 'no_photos';
+    if (filter === 'duplicate') return status === 'duplicate';
+    if (filter === 'ai_generated') return status === 'ai_generated';
+    if (filter === 'no_business_person') return status === 'no_business_person';
+    if (filter === 'approved') return status === 'approved';
+    if (filter === 'inconsistent') return status === 'inconsistent';
+    return true;
   }), [agents, agentFilter, agencyFilter, filter]);
   const visibleAgents = useMemo(() => filteredAgents.slice(0, visibleCount), [filteredAgents, visibleCount]);
 
@@ -475,9 +476,11 @@ const Index = () => {
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 {([
                   { v: 'all', label: 'Todas' },
-                  { v: 'approved', label: 'Aprovadas' },
+                  { v: 'approved', label: 'Aprovados' },
                   { v: 'inconsistent', label: 'Inconsistências' },
                   { v: 'duplicate', label: 'Duplicadas' },
+                  { v: 'ai_generated', label: 'IA' },
+                  { v: 'no_business_person', label: 'Sem empresário' },
                   { v: 'no_photos', label: 'Sem fotos' },
                 ] as { v: FilterType; label: string }[]).map(f => (
                   <Button key={f.v} variant={filter === f.v ? 'default' : 'ghost'} size="sm" onClick={() => setFilter(f.v)}>
