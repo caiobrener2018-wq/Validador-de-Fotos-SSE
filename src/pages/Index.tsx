@@ -17,20 +17,25 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Fila contínua adaptativa para OpenAI: respeita ~500 RPM sem formar lotes.
-const OPENAI_RPM_LIMIT = 480;
-const START_INTERVAL_MS = Math.ceil(60_000 / OPENAI_RPM_LIMIT);
-const MIN_CONCURRENCY = 12;
-const INITIAL_CONCURRENCY = 40;
-const MAX_CONCURRENCY = 96;
+// Dois workers paralelos, cada um pacing ~500 RPM em um modelo diferente.
+// Combinado: até ~1000 RPM. Limites são por-modelo na OpenAI, então usar
+// modelos distintos permite somar os RPMs sem disparar 429.
+const WORKERS = [
+  { model: 'gpt-4o-mini', rpm: 480 },
+  { model: 'gpt-4.1-mini', rpm: 480 },
+] as const;
+const MIN_CONCURRENCY_PER_WORKER = 8;
+const INITIAL_CONCURRENCY_PER_WORKER = 28;
+const MAX_CONCURRENCY_PER_WORKER = 72;
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
 async function analyzeOnce(
-  photo: { url: string; companyName: string; segment: string; agentName: string }
+  photo: { url: string; companyName: string; segment: string; agentName: string },
+  model: string,
 ): Promise<any> {
   const { data } = await supabase.functions.invoke('analyze-photo', {
-    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, agentName: photo.agentName },
+    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, agentName: photo.agentName, model },
   });
   if (data?.ok === false && data.error === 'rate_limit') {
     const err: any = new Error('rate_limit');
