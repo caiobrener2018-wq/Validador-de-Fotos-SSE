@@ -144,12 +144,12 @@ function parseRetryAfterMs(text: string): number {
   return DEFAULT_RETRY_AFTER_MS;
 }
 
-async function callOpenAI(openaiKey: string, systemPrompt: string, companyName: string, imageUrl: string) {
+async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, imageUrl: string) {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
