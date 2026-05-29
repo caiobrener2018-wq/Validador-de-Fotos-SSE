@@ -431,7 +431,7 @@ const Index = () => {
             {isAnalyzing && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (fila contínua até 500 RPM)'}</span>
+                  <span>{isPaused ? 'Pausado' : 'Analisando fotos... (2 modelos em paralelo, ~1000 RPM)'}</span>
                   <span>{progress}%</span>
                 </div>
                 <Progress value={progress} />
