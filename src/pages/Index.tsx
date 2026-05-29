@@ -191,16 +191,23 @@ const Index = () => {
     tasks.forEach(t => { updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing'; });
     setAgents(updated.slice());
 
-    // Hash map for AI-based dedup (built incrementally)
-    const hashMap = new Map<string, { agent: string; company: string; row: number }>();
-    // Pre-populate from already-done photos with hash
+    // Hash map exato (SHA-256) e índice perceptual (aHash) para near-duplicates
+    type DupRef = { agent: string; company: string; row: number };
+    const hashMap = new Map<string, DupRef>();
+    const pHashIndex: { hash: string; ref: DupRef }[] = [];
+    // Pré-popula com fotos já analisadas que tenham hash
     updated.forEach(a => a.photos.forEach(p => {
-      if (p.imageHash && p.status === 'done') {
-        if (!hashMap.has(p.imageHash)) {
-          hashMap.set(p.imageHash, { agent: a.name, company: a.companyName, row: a.excelRow });
-        }
-      }
+      const ref: DupRef = { agent: a.name, company: a.companyName, row: a.excelRow };
+      if (p.imageHash && p.status === 'done' && !hashMap.has(p.imageHash)) hashMap.set(p.imageHash, ref);
+      if (p.perceptualHash && p.status === 'done') pHashIndex.push({ hash: p.perceptualHash, ref });
     }));
+
+    const findNearDuplicate = (h: string): DupRef | null => {
+      for (const entry of pHashIndex) {
+        if (hammingHex(entry.hash, h) <= NEAR_DUPLICATE_THRESHOLD) return entry.ref;
+      }
+      return null;
+    };
 
     let done = 0;
     let cursor = 0;
@@ -219,35 +226,58 @@ const Index = () => {
       const agent = updated[task.agentIdx];
       const photo = agent.photos[task.photoIdx];
       try {
-        const result = await analyzeWithRetry({
+        // Dispara análise e hash perceptual em paralelo.
+        const analysisPromise = analyzeWithRetry({
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
+          agentName: agent.name,
         }, shouldStop, waitIfPaused, onRateLimit, waitForStartSlot);
+        const pHashPromise = computePerceptualHash(photo.url).catch(() => null);
+
+        const [result, pHash] = await Promise.all([analysisPromise, pHashPromise]);
         stableCompletions++;
         if (stableCompletions >= 30 && currentConcurrency < MAX_CONCURRENCY) {
           currentConcurrency++;
           stableCompletions = 0;
         }
 
-        // AI-based dedup via image hash
+        const selfRef: DupRef = { agent: agent.name, company: agent.companyName, row: agent.excelRow };
         const hash = result.imageHash as string | undefined;
-        if (hash) {
-          photo.imageHash = hash;
-          const existing = hashMap.get(hash);
-          if (existing && !(existing.agent === agent.name && existing.row === agent.excelRow && agent.photos.indexOf(photo) === task.photoIdx)) {
+        if (hash) photo.imageHash = hash;
+        if (pHash) photo.perceptualHash = pHash;
+
+        // 1) IA generativa tem prioridade máxima sobre duplicidade.
+        if (result?.criterios?.gerada_por_ia) {
+          const { imageHash, ...analysis } = result;
+          photo.analysis = analysis;
+          photo.status = 'ai_generated';
+        } else {
+          // 2) Duplicata exata (mesmos bytes)
+          let dupRef: DupRef | null = null;
+          if (hash) {
+            const existing = hashMap.get(hash);
+            if (existing && !(existing.agent === selfRef.agent && existing.row === selfRef.row)) {
+              dupRef = existing;
+            } else if (!existing) {
+              hashMap.set(hash, selfRef);
+            }
+          }
+          // 3) Quase-duplicata (mesma cena/pessoa, leves diferenças)
+          if (!dupRef && pHash) {
+            const near = findNearDuplicate(pHash);
+            if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) dupRef = near;
+            else pHashIndex.push({ hash: pHash, ref: selfRef });
+          }
+          if (dupRef) {
             photo.status = 'duplicate';
             photo.duplicate = true;
-            photo.duplicateOf = existing;
+            photo.duplicateOf = dupRef;
           } else {
-            hashMap.set(hash, { agent: agent.name, company: agent.companyName, row: agent.excelRow });
             const { imageHash, ...analysis } = result;
             photo.analysis = analysis;
             photo.status = 'done';
           }
-        } else {
-          photo.analysis = result;
-          photo.status = 'done';
         }
       } catch (err: any) {
         if (err?.cancelled) {
