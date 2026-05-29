@@ -53,6 +53,7 @@ async function analyzeOnce(
 
 async function analyzeWithRetry(
   photo: { url: string; companyName: string; segment: string; agentName: string },
+  model: string,
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
@@ -75,7 +76,7 @@ async function analyzeWithRetry(
     if (shouldStop()) { const e: any = new Error('cancelled'); e.cancelled = true; throw e; }
     try {
       await waitForStartSlot();
-      return await analyzeOnce(photo);
+      return await analyzeOnce(photo, model);
     } catch (err: any) {
       if (err?.cancelled) throw err;
       if (attempt >= maxRetries) throw err;
