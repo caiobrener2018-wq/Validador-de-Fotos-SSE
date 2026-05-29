@@ -4,6 +4,8 @@ import { parseExcelFile } from '@/lib/parseExcel';
 import { exportResultsToExcel } from '@/lib/exportResults';
 import { exportImagesToZip } from '@/lib/exportImages';
 import { supabase } from '@/integrations/supabase/client';
+import { computePerceptualHash, hammingHex, NEAR_DUPLICATE_THRESHOLD } from '@/lib/perceptualHash';
+import { getAgentStatus } from '@/lib/agentStatus';
 import { FileUpload } from '@/components/FileUpload';
 import { DashboardSummary } from '@/components/DashboardSummary';
 import { AgentCard } from '@/components/AgentCard';
@@ -25,10 +27,10 @@ const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
 async function analyzeOnce(
-  photo: { url: string; companyName: string; segment: string }
+  photo: { url: string; companyName: string; segment: string; agentName: string }
 ): Promise<any> {
   const { data } = await supabase.functions.invoke('analyze-photo', {
-    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment },
+    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, agentName: photo.agentName },
   });
   if (data?.ok === false && data.error === 'rate_limit') {
     const err: any = new Error('rate_limit');
@@ -45,7 +47,7 @@ async function analyzeOnce(
 }
 
 async function analyzeWithRetry(
-  photo: { url: string; companyName: string; segment: string },
+  photo: { url: string; companyName: string; segment: string; agentName: string },
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
