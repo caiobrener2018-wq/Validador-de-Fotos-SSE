@@ -206,20 +206,30 @@ const Index = () => {
     tasks.forEach(t => { updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing'; });
     setAgents(updated.slice());
 
-    // Hash map exato (SHA-256) e índice perceptual (aHash) para near-duplicates
+    // Hash map exato (SHA-256) e índice perceptual (aHash) para near-duplicates.
+    // O índice perceptual é uma janela circular (FIFO) para evitar O(n) crescente
+    // que faz a análise ficar mais lenta a cada nova foto.
     type DupRef = { agent: string; company: string; row: number };
     const hashMap = new Map<string, DupRef>();
+    const pHashSet = new Map<string, DupRef>(); // dedup exato de pHash em O(1)
     const pHashIndex: { hash: string; ref: DupRef }[] = [];
     // Pré-popula com fotos já analisadas que tenham hash
     updated.forEach(a => a.photos.forEach(p => {
       const ref: DupRef = { agent: a.name, company: a.companyName, row: a.excelRow };
       if (p.imageHash && p.status === 'done' && !hashMap.has(p.imageHash)) hashMap.set(p.imageHash, ref);
-      if (p.perceptualHash && p.status === 'done') pHashIndex.push({ hash: p.perceptualHash, ref });
+      if (p.perceptualHash && p.status === 'done' && !pHashSet.has(p.perceptualHash)) {
+        pHashSet.set(p.perceptualHash, ref);
+        pHashIndex.push({ hash: p.perceptualHash, ref });
+      }
     }));
+    // Mantém a janela limitada
+    while (pHashIndex.length > PHASH_INDEX_MAX) pHashIndex.shift();
 
     const findNearDuplicate = (h: string): DupRef | null => {
-      for (const entry of pHashIndex) {
-        if (hammingHex(entry.hash, h) <= NEAR_DUPLICATE_THRESHOLD) return entry.ref;
+      const exact = pHashSet.get(h);
+      if (exact) return exact;
+      for (let i = pHashIndex.length - 1; i >= 0; i--) {
+        if (hammingHex(pHashIndex[i].hash, h) <= NEAR_DUPLICATE_THRESHOLD) return pHashIndex[i].ref;
       }
       return null;
     };
