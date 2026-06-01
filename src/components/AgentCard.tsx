@@ -97,7 +97,11 @@ function AgentCardImpl({ agent }: Props) {
                 {photo.status === 'duplicate' && (
                   <div className="flex items-start gap-1 text-sm text-orange-700">
                     <Copy className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                    <span>Foto duplicada{photo.duplicateOf ? ` (já enviada por ${photo.duplicateOf.agent} - ${photo.duplicateOf.company}, linha ${photo.duplicateOf.row})` : ''}</span>
+                    <span>
+                      {photo.duplicateReason === 'semantic' ? 'Cena duplicada (mesma situação fotografada novamente)' :
+                       photo.duplicateReason === 'near' ? 'Foto quase idêntica' : 'Foto duplicada'}
+                      {photo.duplicateOf ? ` — original: ${photo.duplicateOf.agent} / ${photo.duplicateOf.company} (linha ${photo.duplicateOf.row})` : ''}
+                    </span>
                   </div>
                 )}
                 {photo.status === 'analyzing' && (

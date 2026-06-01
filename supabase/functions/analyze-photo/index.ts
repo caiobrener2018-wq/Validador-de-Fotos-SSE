@@ -98,6 +98,7 @@ Responda APENAS JSON válido:
     "contexto_segmento": true,
     "gerada_por_ia": false
   },
+  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras) com: tipo de local, número e descrição visual breve das pessoas (gênero aparente, cor/tipo de roupa, postura), 2-3 objetos marcantes, cor/iluminação dominante. Use linguagem padronizada para que cenas iguais gerem textos parecidos. Ex.: 'Interior de padaria com balcão de pães; agente homem camisa azul ao lado de mulher avental vermelho segurando panfleto Sebrae; luz amarela'.",
   "justificativa": "Explicação breve em 1-2 frases"
 }${contextInfo}`;
 }
@@ -126,6 +127,7 @@ function normalize(raw: any) {
   return {
     aprovada: !!raw?.aprovada && !criterios.gerada_por_ia,
     criterios,
+    scene_signature: typeof raw?.scene_signature === "string" ? raw.scene_signature.slice(0, 400) : "",
     justificativa: typeof raw?.justificativa === "string" ? raw.justificativa : "",
   };
 }
@@ -138,7 +140,7 @@ function parseJson(text: string) {
     if (m) {
       try { return normalize(JSON.parse(m[0])); } catch { /* fallthrough */ }
     }
-    return { aprovada: false, criterios: { ...EMPTY_CRITERIA }, justificativa: "Não foi possível analisar a imagem." };
+    return { aprovada: false, criterios: { ...EMPTY_CRITERIA }, scene_signature: "", justificativa: "Não foi possível analisar a imagem." };
   }
 }
 
@@ -165,9 +167,9 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
     ],
   };
   if (usesCompletionTokens) {
-    body.max_completion_tokens = 800; // reasoning models consume tokens internally
+    body.max_completion_tokens = 1000; // reasoning models consume tokens internally
   } else {
-    body.max_tokens = 220;
+    body.max_tokens = 400;
   }
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
