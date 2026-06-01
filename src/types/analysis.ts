@@ -12,6 +12,8 @@ export interface PhotoAnalysis {
     /** Indica indícios de imagem gerada/alterada por IA. */
     gerada_por_ia: boolean;
   };
+  /** Descrição padronizada da cena, usada para detecção semântica de duplicatas. */
+  scene_signature?: string;
   justificativa: string;
 }
 
@@ -22,6 +24,8 @@ export interface AgentPhoto {
   error?: string;
   duplicate?: boolean;
   duplicateOf?: { agent: string; company: string; row: number };
+  /** Motivo da duplicação para exibir na UI. */
+  duplicateReason?: 'exact' | 'near' | 'semantic';
   /** Hash exato do conteúdo (SHA-256). */
   imageHash?: string;
   /** Hash perceptual (aHash 256-bit em hex) para detectar fotos quase iguais. */
