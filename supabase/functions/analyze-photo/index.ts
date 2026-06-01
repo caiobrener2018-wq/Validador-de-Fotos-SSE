@@ -98,6 +98,7 @@ Responda APENAS JSON válido:
     "contexto_segmento": true,
     "gerada_por_ia": false
   },
+  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras) com: tipo de local, número e descrição visual breve das pessoas (gênero aparente, cor/tipo de roupa, postura), 2-3 objetos marcantes, cor/iluminação dominante. Use linguagem padronizada para que cenas iguais gerem textos parecidos. Ex.: 'Interior de padaria com balcão de pães; agente homem camisa azul ao lado de mulher avental vermelho segurando panfleto Sebrae; luz amarela'.",
   "justificativa": "Explicação breve em 1-2 frases"
 }${contextInfo}`;
 }
