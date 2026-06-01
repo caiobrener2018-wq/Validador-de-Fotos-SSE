@@ -127,6 +127,7 @@ function normalize(raw: any) {
   return {
     aprovada: !!raw?.aprovada && !criterios.gerada_por_ia,
     criterios,
+    scene_signature: typeof raw?.scene_signature === "string" ? raw.scene_signature.slice(0, 400) : "",
     justificativa: typeof raw?.justificativa === "string" ? raw.justificativa : "",
   };
 }
