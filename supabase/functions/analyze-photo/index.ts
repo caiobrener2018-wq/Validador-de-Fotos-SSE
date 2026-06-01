@@ -140,7 +140,7 @@ function parseJson(text: string) {
     if (m) {
       try { return normalize(JSON.parse(m[0])); } catch { /* fallthrough */ }
     }
-    return { aprovada: false, criterios: { ...EMPTY_CRITERIA }, justificativa: "Não foi possível analisar a imagem." };
+    return { aprovada: false, criterios: { ...EMPTY_CRITERIA }, scene_signature: "", justificativa: "Não foi possível analisar a imagem." };
   }
 }
 
