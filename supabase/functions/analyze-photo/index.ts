@@ -167,9 +167,9 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
     ],
   };
   if (usesCompletionTokens) {
-    body.max_completion_tokens = 800; // reasoning models consume tokens internally
+    body.max_completion_tokens = 1000; // reasoning models consume tokens internally
   } else {
-    body.max_tokens = 220;
+    body.max_tokens = 400;
   }
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
