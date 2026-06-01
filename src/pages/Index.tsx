@@ -316,6 +316,7 @@ const Index = () => {
             photo.status = 'duplicate';
             photo.duplicate = true;
             photo.duplicateOf = dupRef;
+            photo.duplicateReason = hash && hashMap.get(hash) === dupRef ? 'exact' : 'near';
           } else {
             const { imageHash, ...analysis } = result;
             photo.analysis = analysis;
