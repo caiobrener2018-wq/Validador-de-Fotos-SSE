@@ -374,16 +374,50 @@ const Index = () => {
     clearInterval(flushTimer);
     flush();
 
-
     const wasCancelled = cancelledRef.current;
+
+    // Dedup semântica: agrupa fotos com cenas/pessoas iguais em ângulos diferentes
+    let semanticMarked = 0;
+    if (!wasCancelled) {
+      try {
+        setProgress(100);
+        const res = await runSemanticDedup(updated, (d, t) => {
+          // mantém o usuário informado pelo título do toast/log
+          if (d === t) console.info(`Embeddings semânticos: ${d}/${t}`);
+        });
+        semanticMarked = res.marked;
+        setAgents(updated.slice());
+      } catch (e) {
+        console.warn('Semantic dedup falhou (não crítico):', e);
+      }
+    }
+
     setIsAnalyzing(false);
     setIsPaused(false);
     pausedRef.current = false;
     cancelledRef.current = false;
     toast({
       title: wasCancelled ? 'Análise cancelada' : 'Análise concluída!',
-      description: `${done} fotos processadas`,
+      description: `${done} fotos processadas${semanticMarked > 0 ? ` • ${semanticMarked} duplicatas semânticas detectadas` : ''}`,
     });
+  }, [toast]);
+
+  const [isSemanticRunning, setIsSemanticRunning] = useState(false);
+  const handleRunSemanticDedup = useCallback(async () => {
+    setIsSemanticRunning(true);
+    try {
+      const updated = agentsRef.current.map(a => ({ ...a, photos: a.photos.slice() }));
+      const res = await runSemanticDedup(updated);
+      setAgents(updated);
+      toast({
+        title: 'Detecção semântica concluída',
+        description: `${res.marked} duplicatas marcadas (de ${res.scanned} fotos analisadas)`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Erro na detecção semântica', description: e?.message || 'Falha', variant: 'destructive' });
+    } finally {
+      setIsSemanticRunning(false);
+    }
   }, [toast]);
 
   const handlePauseToggle = useCallback(() => {
