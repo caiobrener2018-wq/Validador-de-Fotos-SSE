@@ -507,6 +507,12 @@ const Index = () => {
                   <RefreshCw className="h-4 w-4 mr-2" /> Reanalisar Falhas
                 </Button>
               )}
+              {hasResults && !isAnalyzing && (
+                <Button variant="outline" onClick={handleRunSemanticDedup} disabled={isSemanticRunning}>
+                  {isSemanticRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Copy className="h-4 w-4 mr-2" />}
+                  Detectar duplicatas semânticas
+                </Button>
+              )}
               {isAnalyzing && (
                 <>
                   <Button variant="outline" onClick={handlePauseToggle}>
