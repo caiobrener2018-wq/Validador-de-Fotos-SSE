@@ -151,21 +151,28 @@ function parseRetryAfterMs(text: string): number {
 }
 
 async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, imageUrl: string) {
+  // GPT-5 family and newer reasoning models use max_completion_tokens instead of max_tokens
+  const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model);
+  const body: Record<string, unknown> = {
+    model,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: [
+        { type: "text", text: `Analise esta foto da empresa "${companyName || 'N/A'}":` },
+        { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
+      ] },
+    ],
+  };
+  if (usesCompletionTokens) {
+    body.max_completion_tokens = 800; // reasoning models consume tokens internally
+  } else {
+    body.max_tokens = 220;
+  }
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: [
-          { type: "text", text: `Analise esta foto da empresa "${companyName || 'N/A'}":` },
-          { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
-        ] },
-      ],
-      max_tokens: 220,
-    }),
+    body: JSON.stringify(body),
   });
 
   return {
