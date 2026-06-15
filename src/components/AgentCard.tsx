@@ -58,11 +58,21 @@ function AgentCardImpl({ agent }: Props) {
     <>
       <Card className={borderClass} style={renderHint}>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <CardTitle className="text-base">{agent.name}</CardTitle>
               {agent.agency && <p className="text-xs font-medium text-primary truncate">{agent.agency}</p>}
-              <p className="text-sm text-muted-foreground truncate">{agent.companyName}{agent.segment ? ` • ${agent.segment}` : ''} <span className="text-muted-foreground/60">• Linha {agent.excelRow}</span></p>
+              <p className="text-sm text-muted-foreground truncate">
+                {agent.companyName}
+                {agent.cnpj ? <span className="text-muted-foreground/70"> • CNPJ {agent.cnpj}</span> : null}
+                <span className="text-muted-foreground/60"> • Linha {agent.excelRow}</span>
+              </p>
+              {(agent.bairro || agent.cidade || agent.lote) && (
+                <p className="text-xs text-muted-foreground/80 truncate">
+                  {[agent.bairro, agent.cidade].filter(Boolean).join(' / ')}
+                  {agent.lote ? ` • Lote ${agent.lote}` : ''}
+                </p>
+              )}
             </div>
             {status === 'no_photos' && <Badge variant="outline" className="border-amber-500 text-amber-700"><AlertTriangle className="h-3 w-3 mr-1" />Não possui fotos</Badge>}
             {status === 'ai_generated' && <Badge variant="outline" className="border-purple-500 text-purple-700"><Sparkles className="h-3 w-3 mr-1" />IA</Badge>}

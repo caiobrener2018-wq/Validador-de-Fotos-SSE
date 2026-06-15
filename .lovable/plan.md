@@ -1,73 +1,106 @@
-# Aprimoramentos do Validador de Fotos
 
-## 1. Detecção de fotos quase iguais (mesmo ambiente/pessoa)
+## Objetivo
+Adaptar o validador para a nova planilha do SSE (mais colunas), passar a usar Bairro/Cidade/Lote/CNPJ como metadados/filtros, e gerar um relatório que espelha o arquivo original adicionando colunas de auditoria.
 
-Hoje a deduplicação é por SHA-256 — só pega bytes idênticos. Vou adicionar **perceptual hash (pHash 64-bit)** na edge function `analyze-photo`:
+## 1. Novo parser de upload (`src/lib/parseExcel.ts`)
 
-- Gerar pHash 8x8 DCT a partir da imagem já baixada (sem dependência externa, ~30 linhas de Deno).
-- Retornar `perceptualHash` junto do `imageHash` atual.
-- No `Index.tsx`, manter o mapa de hashes exatos **e** um índice de pHash. Para cada nova foto, calcular distância de Hamming contra os pHash já vistos; se `≤ 6 bits` de diferença → marcar como `duplicate` (com referência ao agente/empresa/linha original, igual hoje).
-- Mantém deduplicação exata como atalho rápido antes de comparar perceptual.
+Mapeamento por cabeçalho (case-insensitive, com fallback por índice):
 
-## 2. Detecção de imagens geradas por IA
+| Campo no app        | Cabeçalho                | Coluna |
+|---------------------|--------------------------|--------|
+| `agentName`         | Nome Atendente           | A (0)  |
+| `agency`            | Empresa Habilitada       | B (1)  |
+| `cpfRespondente`    | Cpf Respondente          | J (9)  |
+| `companyName`       | Razao Social             | M (12) |
+| `cnpj`              | Cnpj                     | N (13) |
+| `bairro`            | Bairro Cnpj              | Q (16) |
+| `cidade`            | Cidade Cnpj              | R (17) |
+| `lote`              | lote                     | S (18) |
+| `photos[0..2]`      | Fotos (3 colunas)        | AI/AJ/AK (34-36) |
 
-- Adicionar novo critério booleano `gerada_por_ia` ao schema de resposta do OpenAI.
-- Ampliar o system prompt para instruir o modelo a procurar artefatos típicos de IA: mãos/dedos deformados, texto ilegível em placas/produtos, simetrias estranhas, iluminação inconsistente, fundo "plástico"/borrado anormal, olhos/orelhas assimétricos, repetição de padrões.
-- Novo `status` no tipo `AgentPhoto`: `'ai_generated'`. Tem prioridade sobre `done`.
-- Novo `FilterType`: `'ai_generated'` ("IA").
-- Card e DashboardSummary ganham badge/contador "IA" (ícone `Sparkles` ou `Bot`, cor roxa).
+Além disso, o parser passa a **guardar a linha original completa** (todas as colunas) em `rawRow: Record<string, unknown>` no `AgentData`, junto com a ordem original dos cabeçalhos (`rawHeaders: string[]`), para usar no export.
 
-## 3. Nova regra de aprovação do atendimento (bloco)
+Detecção de duplicatas exatas por URL continua igual.
 
-Lógica atual: qualquer foto com inconsistência derruba o atendimento. Nova lógica em `AgentCard` e nos filtros do `Index.tsx`:
+## 2. Tipos (`src/types/analysis.ts`)
 
-```text
-se alguma foto = ai_generated  → atendimento = "IA"          (prioridade máxima)
-senão se alguma foto = duplicate → atendimento = "Duplicada"
-senão se nenhuma foto tem empresário/funcionário → "Sem empresário"  (ver item 4)
-senão se ao menos uma foto aprovada → "Aprovado"
-senão → "Inconsistência"
+Adicionar em `AgentData`:
+- `cpfRespondente?: string`
+- `bairro?: string`
+- `cidade?: string`
+- `lote?: string`
+- `cnpj?: string`
+- `rawRow?: Record<string, unknown>`
+- `rawHeaders?: string[]`
+- `cpfGroupNumber?: number` (preenchido no export quando o CPF aparece em ≥2 CNPJs distintos)
+
+`segment` deixa de ser usado e é removido do fluxo (ou mantido opcional para retrocompat).
+
+Tipo de filtro estendido para incluir `bairro`, `cidade`, `lote` (além dos já existentes `agency`, `agent`, `status`).
+
+## 3. UI — Card e Dashboard
+
+- `AgentCard.tsx`: exibir CNPJ, Bairro, Cidade e Lote no bloco de metadados (Razão Social continua, "Segmento" sai).
+- `DashboardSummary.tsx` / página `Index.tsx`:
+  - Filtros existentes (Agente, Agência, Status) **continuam**.
+  - Novos filtros: **Bairro**, **Cidade**, **Lote** (selects populados dinamicamente a partir dos dados carregados).
+  - Razão Social e CNPJ NÃO viram filtro.
+
+Critério de validação do atendimento permanece como hoje (presença de empresário ao lado do agente é o principal sinal); nada muda na edge function `analyze-photo`.
+
+## 4. Novo export Excel (`src/lib/exportResults.ts`)
+
+Reescrita do gerador para:
+
+1. Recriar a planilha com **todas as colunas originais na mesma ordem** (a partir de `rawHeaders` / `rawRow`). Fotos saem como **texto/URL** (hyperlink), não como imagem embutida — relatório fica leve.
+2. Acrescentar ao final 3 colunas novas:
+   - **Status**: `Consistente` | `Duplicada` | `IA` | `Sem empresário` | `Inconsistente`
+   - **Justificativa**: texto curto, ex.:
+     - Duplicada → `Duplicada de linha X (CNPJ Y)` ou `Cena duplicada de linha X`
+     - Sem empresário → `Nenhum empresário/funcionário identificado nas fotos`
+     - IA → `Traços de IA generativa detectados na foto N`
+     - Inconsistente → motivo objetivo retornado pela análise
+     - Consistente → vazio ou `OK`
+   - **Grupo CPF**: número inteiro (1, 2, 3…) atribuído apenas quando o **Cpf Respondente** aparece em **≥ 2 CNPJs diferentes**. Linhas sem repetição ficam em branco.
+
+3. **AutoFilter** habilitado em toda a faixa do cabeçalho (permite filtrar por Status, Grupo CPF, etc., no próprio Excel).
+4. **Cor da linha por status** (fill aplicado a todas as células da linha):
+   - Consistente → verde claro (`#E6F4EA`)
+   - Duplicada → amarelo (`#FFF4CE`)
+   - IA → roxo claro (`#EADCF8`)
+   - Sem empresário → laranja (`#FCE5CD`)
+   - Inconsistente → vermelho claro (`#FADBD8`)
+5. Cabeçalho em negrito com fundo cinza, larguras de coluna ajustadas, freeze na primeira linha.
+
+### Algoritmo do "Grupo CPF"
+```
+const byCpf = new Map<string, Set<string>>();          // cpf -> set de cnpj
+agents.forEach(a => {
+  if (!a.cpfRespondente || !a.cnpj) return;
+  const set = byCpf.get(a.cpfRespondente) ?? new Set();
+  set.add(a.cnpj);
+  byCpf.set(a.cpfRespondente, set);
+});
+let n = 0;
+const cpfGroup = new Map<string, number>();
+for (const [cpf, cnpjs] of byCpf) if (cnpjs.size >= 2) cpfGroup.set(cpf, ++n);
+// no export, agent.cpfGroupNumber = cpfGroup.get(agent.cpfRespondente)
 ```
 
-Centralizar essa derivação numa função `getAgentStatus(agent)` em `src/lib/agentStatus.ts` para ser reusada por `AgentCard`, `DashboardSummary`, filtros e exports (`exportResults.ts`, `exportImages.ts`).
+## 5. Memória do projeto
 
-## 4. Novo filtro "Sem empresário"
+Atualizar `mem://features/data-processing` e `mem://features/export-capabilities` refletindo:
+- novas colunas lidas/exibidas (Bairro, Cidade, Lote, CNPJ, Cpf Respondente);
+- export agora replica planilha original + 3 colunas extras + cor por status + Grupo CPF.
 
-Hoje o critério `empresario` mistura "agente + empresário". Vou desmembrar no prompt e schema:
+## Arquivos afetados
+- `src/lib/parseExcel.ts` — novo mapeamento + `rawRow`/`rawHeaders`.
+- `src/types/analysis.ts` — novos campos.
+- `src/components/AgentCard.tsx` — exibir CNPJ/Bairro/Cidade/Lote.
+- `src/components/DashboardSummary.tsx` + `src/pages/Index.tsx` — novos filtros Bairro/Cidade/Lote.
+- `src/lib/exportResults.ts` — reescrita do export (espelho + colunas extras + cores + autofilter + Grupo CPF).
+- `mem://features/data-processing`, `mem://features/export-capabilities` — atualização.
 
-- Novos campos em `criterios`: `agente_sebrae` (pessoa que parece ser o consultor/agente) e `empresario_ou_funcionario` (dono/funcionário do estabelecimento).
-- Manter `empresario` como compatibilidade derivada (`agente_sebrae || empresario_ou_funcionario`) para não quebrar lógica antiga durante a transição — ou migrar tudo de uma vez (recomendo migrar).
-- Atendimento marcado como **"Sem empresário"** quando: todas as fotos analisadas têm pessoas mas nenhuma tem `empresario_ou_funcionario = true` (só aparece o agente).
-- Novo `FilterType`: `'no_business_person'`. Badge âmbar/laranja com ícone `UserX`.
-
-## Detalhes técnicos
-
-**Edge function `analyze-photo/index.ts`:**
-- Acrescentar função `perceptualHash(bytes)`: decode JPEG/PNG via `Image` API do Deno? Deno não tem canvas nativo. Alternativa leve: usar `npm:sharp` não funciona no Edge Runtime. Vou usar **`npm:image-hash@5`** ou implementar pHash em JS puro processando os bytes via `npm:@jsquash/jpeg` + `@jsquash/png` (já WASM, suportados em Deno Edge). Se peso for problema, fallback: enviar a imagem 32x32 grayscale para o próprio GPT-4o-mini retornar o pHash junto — mas isso adiciona latência; preferimos WASM local.
-- Expandir prompt e `response_format` (json_object) com os novos campos.
-- Retornar `{ aprovada, criterios:{ fachada, agente_sebrae, empresario_ou_funcionario, interior, fundo_valido, contexto_segmento, gerada_por_ia }, justificativa, imageHash, perceptualHash }`.
-
-**Tipos (`src/types/analysis.ts`):**
-- `PhotoAnalysis.criterios` ganha `agente_sebrae`, `empresario_ou_funcionario`, `gerada_por_ia`.
-- `AgentPhoto.status` ganha `'ai_generated'`.
-- `AgentPhoto.perceptualHash?: string`.
-- `FilterType` ganha `'ai_generated' | 'no_business_person'`.
-
-**`src/pages/Index.tsx`:**
-- Índice `perceptualHashes: Array<{ hash, agent, company, row }>` + função `hamming(a,b)`.
-- Após receber resposta: se `gerada_por_ia` → status `'ai_generated'`; senão checar duplicado exato → perceptual ≤6 → senão `'done'`.
-- Filtros e contadores usam `getAgentStatus`.
-
-**Componentes:**
-- `AgentCard`: novo badge "IA" (roxo) e "Sem empresário" (âmbar); exibir critério `gerada_por_ia` quando true; mostrar `agente_sebrae`/`empresario_ou_funcionario` como badges separados.
-- `DashboardSummary`: dois novos cards — "IA" e "Sem empresário".
-- Barra de filtros no `Index.tsx`: dois novos botões.
-
-**Exports:**
-- `exportResults.ts`: nova coluna "Status do Atendimento" usando `getAgentStatus`; coluna "Gerada por IA".
-- `exportImages.ts`: pastas adicionais `/ia/` e `/sem_empresario/`.
-
-## Pontos para confirmar antes de implementar
-
-- **Limiar de near-duplicate**: `≤ 6 bits` em pHash de 64 bits é o padrão para "praticamente a mesma cena". Confirma ou prefere mais rígido (≤4) / mais frouxo (≤10)?
-- **Distinguir agente Sebrae vs empresário visualmente**: a IA vai inferir pelo contexto (crachá Sebrae, postura de visita, roupas formais de consultor vs avental/uniforme do estabelecimento). Aceitável que possa haver alguma imprecisão? Se quiser sinal mais forte, podemos pedir que o usuário envie nome do agente para o prompt — hoje já temos `agent.name`.
+## Fora do escopo
+- Nenhuma alteração na edge function `analyze-photo` nem nos workers.
+- ZIP de imagens permanece como está.

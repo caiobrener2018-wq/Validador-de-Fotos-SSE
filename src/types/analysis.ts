@@ -36,10 +36,22 @@ export interface AgentData {
   name: string;
   agency: string;
   companyName: string;
+  /** Mantido opcional apenas para retrocompatibilidade. Não é mais lido. */
   segment: string;
+  /** CPF do empresário/respondente (coluna J). */
+  cpfRespondente?: string;
+  /** CNPJ da empresa (coluna N). */
+  cnpj?: string;
+  bairro?: string;
+  cidade?: string;
+  lote?: string;
   sourceFile: string;
   excelRow: number;
   photos: AgentPhoto[];
+  /** Linha completa da planilha original, mapeada por cabeçalho. */
+  rawRow?: Record<string, unknown>;
+  /** Cabeçalhos originais, em ordem, para reconstruir a planilha no export. */
+  rawHeaders?: string[];
 }
 
 export type FilterType =
