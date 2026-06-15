@@ -156,18 +156,6 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
         cell.value = String(value);
       }
     });
-      const cell = row.getCell(idx + 1);
-      const nh = h.toLowerCase();
-      const value = cell.value;
-      if (nh.includes('foto') && typeof value === 'string' && /^https?:\/\//i.test(value)) {
-        cell.value = { text: value, hyperlink: value };
-        cell.font = { color: { argb: 'FF1D4ED8' }, underline: true };
-      }
-      if ((nh.includes('cnpj') || nh.includes('cpf')) && value !== null && value !== undefined && value !== '') {
-        cell.numFmt = '@';
-        cell.value = String(value);
-      }
-    });
 
     // Coluna de Status em negrito
     const statusCell = row.getCell(baseHeaders.length + 1);
