@@ -34,15 +34,18 @@ function findColumn(headers: string[], candidates: string[], fallbackIdx: number
 }
 
 function findPhotoColumns(headers: string[]): number[] {
-  // Procura todas as colunas cujo cabeçalho contenha "foto"
-  const indices: number[] = [];
+  // Procura colunas cujo cabeçalho contenha "foto"
+  const explicit: number[] = [];
   headers.forEach((h, i) => {
-    if (norm(h).includes('foto')) indices.push(i);
+    if (norm(h).includes('foto')) explicit.push(i);
   });
-  if (indices.length >= 1) {
-    // Pega no máximo 3
-    return indices.slice(0, 3);
+  // Caso a planilha original tenha um único cabeçalho "Fotos" cobrindo 3 colunas
+  // (as duas seguintes vêm com cabeçalho vazio), expandimos para as 3 colunas adjacentes.
+  if (explicit.length === 1) {
+    const start = explicit[0];
+    return [start, start + 1, start + 2];
   }
+  if (explicit.length >= 2) return explicit.slice(0, 3);
   return PHOTO_FALLBACK_IDXS;
 }
 
