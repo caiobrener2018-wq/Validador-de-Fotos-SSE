@@ -121,19 +121,41 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
     rowValues.push(statusLabel, justificativa, grupoCpf);
 
     const row = ws.addRow(rowValues);
-    row.alignment = { vertical: 'middle', wrapText: true };
+    row.height = 18;
+    row.alignment = { vertical: 'middle', wrapText: false, shrinkToFit: false };
 
-    // Pinta a linha inteira com a cor do status
+    // Pinta a linha inteira com a cor do status + bordas em todas as células
     const fillArgb = palette[status];
-    if (fillArgb) {
-      for (let c = 1; c <= headers.length; c++) {
-        const cell = row.getCell(c);
+    for (let c = 1; c <= headers.length; c++) {
+      const cell = row.getCell(c);
+      if (fillArgb) {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillArgb } };
+      }
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+        bottom: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+        left: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+        right: { style: 'thin', color: { argb: 'FFD9D9D9' } },
+      };
+      if (!cell.alignment || cell.alignment.wrapText !== false) {
+        cell.alignment = { ...(cell.alignment || {}), vertical: 'middle', wrapText: false };
       }
     }
 
     // Hyperlink nas colunas de foto + força CNPJ/CPF como texto (preserva máscara)
     headers.forEach((h, idx) => {
+      const cell = row.getCell(idx + 1);
+      const nh = h.toLowerCase();
+      const value = cell.value;
+      if (nh.includes('foto') && typeof value === 'string' && /^https?:\/\//i.test(value)) {
+        cell.value = { text: value, hyperlink: value };
+        cell.font = { color: { argb: 'FF1D4ED8' }, underline: true };
+      }
+      if ((nh.includes('cnpj') || nh.includes('cpf')) && value !== null && value !== undefined && value !== '') {
+        cell.numFmt = '@';
+        cell.value = String(value);
+      }
+    });
       const cell = row.getCell(idx + 1);
       const nh = h.toLowerCase();
       const value = cell.value;
