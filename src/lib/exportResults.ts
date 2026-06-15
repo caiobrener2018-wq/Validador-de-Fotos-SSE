@@ -45,8 +45,19 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
   const headerRow = ws.getRow(1);
   headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
   headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } };
-  headerRow.alignment = { vertical: 'middle', horizontal: 'left' };
-  headerRow.height = 22;
+  headerRow.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false };
+  headerRow.height = 20;
+  // Bordas finas em todas as células do cabeçalho
+  for (let c = 1; c <= headers.length; c++) {
+    headerRow.getCell(c).border = {
+      top: { style: 'thin', color: { argb: 'FFBFBFBF' } },
+      bottom: { style: 'thin', color: { argb: 'FFBFBFBF' } },
+      left: { style: 'thin', color: { argb: 'FFBFBFBF' } },
+      right: { style: 'thin', color: { argb: 'FFBFBFBF' } },
+    };
+  }
+  // Altura padrão das próximas linhas
+  ws.properties.defaultRowHeight = 18;
 
   // Larguras razoáveis (sem inflar): URL e textos longos ganham mais.
   headers.forEach((h, idx) => {
