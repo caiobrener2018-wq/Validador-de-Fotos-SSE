@@ -85,6 +85,12 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
         }
         const photoIdxs = findPhotoColumns(headerRow);
 
+        // Garante que as 3 colunas de fotos tenham cabeçalhos distintos
+        // (planilha original costuma vir com "Fotos" só na primeira e vazio nas outras 2).
+        photoIdxs.forEach((pi, k) => {
+          headerRow[pi] = `Foto ${k + 1}`;
+        });
+
         const agents: AgentData[] = [];
         for (let i = startIdx; i < rows.length; i++) {
           const row = rows[i] as unknown[];
@@ -93,9 +99,13 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
           if (!name) continue;
 
           const rawRow: Record<string, unknown> = {};
+          const seen = new Set<string>();
           headerRow.forEach((h, j) => {
-            // Mantém todas as colunas mesmo com cabeçalho vazio (usa índice como chave)
-            const key = h || `__col_${j}`;
+            let key = h || `Coluna ${j + 1}`;
+            // Evita colisão quando dois cabeçalhos têm o mesmo nome
+            let suffix = 2;
+            while (seen.has(key)) key = `${h || `Coluna ${j + 1}`} (${suffix++})`;
+            seen.add(key);
             rawRow[key] = row[j];
           });
 
