@@ -101,6 +101,9 @@ const Index = () => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [agentFilter, setAgentFilter] = useState<string>('all');
   const [agencyFilter, setAgencyFilter] = useState<string>('all');
+  const [bairroFilter, setBairroFilter] = useState<string>('all');
+  const [cidadeFilter, setCidadeFilter] = useState<string>('all');
+  const [loteFilter, setLoteFilter] = useState<string>('all');
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_AGENTS);
   const { toast } = useToast();
   const agentsRef = useRef<AgentData[]>([]);
@@ -111,6 +114,9 @@ const Index = () => {
 
   const uniqueAgentNames = useMemo(() => [...new Set(agents.map(a => a.name))].sort(), [agents]);
   const uniqueAgencies = useMemo(() => [...new Set(agents.map(a => a.agency).filter(Boolean))].sort(), [agents]);
+  const uniqueBairros = useMemo(() => [...new Set(agents.map(a => a.bairro).filter(Boolean) as string[])].sort(), [agents]);
+  const uniqueCidades = useMemo(() => [...new Set(agents.map(a => a.cidade).filter(Boolean) as string[])].sort(), [agents]);
+  const uniqueLotes = useMemo(() => [...new Set(agents.map(a => a.lote).filter(Boolean) as string[])].sort(), [agents]);
 
   const handleFilesSelected = useCallback(async (files: File[]) => {
     setIsLoadingFile(true);
@@ -434,6 +440,9 @@ const Index = () => {
   const filteredAgents = useMemo(() => agents.filter(agent => {
     if (agentFilter !== 'all' && agent.name !== agentFilter) return false;
     if (agencyFilter !== 'all' && agent.agency !== agencyFilter) return false;
+    if (bairroFilter !== 'all' && agent.bairro !== bairroFilter) return false;
+    if (cidadeFilter !== 'all' && agent.cidade !== cidadeFilter) return false;
+    if (loteFilter !== 'all' && agent.lote !== loteFilter) return false;
     if (filter === 'all') return true;
     const status = getAgentStatus(agent);
     if (filter === 'no_photos') return status === 'no_photos';
@@ -443,12 +452,12 @@ const Index = () => {
     if (filter === 'approved') return status === 'approved';
     if (filter === 'inconsistent') return status === 'inconsistent';
     return true;
-  }), [agents, agentFilter, agencyFilter, filter]);
+  }), [agents, agentFilter, agencyFilter, bairroFilter, cidadeFilter, loteFilter, filter]);
   const visibleAgents = useMemo(() => filteredAgents.slice(0, visibleCount), [filteredAgents, visibleCount]);
 
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_AGENTS);
-  }, [agents, agentFilter, agencyFilter, filter]);
+  }, [agents, agentFilter, agencyFilter, bairroFilter, cidadeFilter, loteFilter, filter]);
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const hasResults = agents.some(a => a.photos.some(p => p.status === 'done'));
@@ -573,6 +582,36 @@ const Index = () => {
                 <SelectContent>
                   <SelectItem value="all">Todos os agentes</SelectItem>
                   {uniqueAgentNames.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              <Select value={cidadeFilter} onValueChange={setCidadeFilter}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue placeholder="Cidade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as cidades</SelectItem>
+                  {uniqueCidades.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              <Select value={bairroFilter} onValueChange={setBairroFilter}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue placeholder="Bairro" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os bairros</SelectItem>
+                  {uniqueBairros.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              <Select value={loteFilter} onValueChange={setLoteFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Lote" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os lotes</SelectItem>
+                  {uniqueLotes.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
                 </SelectContent>
               </Select>
 
