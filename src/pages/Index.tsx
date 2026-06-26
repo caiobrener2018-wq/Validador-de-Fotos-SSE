@@ -294,7 +294,7 @@ const Index = () => {
     }));
 
     const onRateLimit = (worker: Worker, retryAfterMs: number) => {
-      worker.currentConcurrency = Math.max(MIN_CONCURRENCY_PER_WORKER, Math.floor(worker.currentConcurrency * 0.65));
+      worker.currentConcurrency = Math.max(MIN_CONCURRENCY_PER_WORKER, Math.floor(worker.currentConcurrency * 0.5));
       worker.stableCompletions = 0;
       console.info(`OpenAI rate limit (${worker.model}): reduzindo paralelismo para ${worker.currentConcurrency}. Retry em ${retryAfterMs}ms.`);
     };
