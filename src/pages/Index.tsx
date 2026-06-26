@@ -4,9 +4,8 @@ import { parseExcelFile } from '@/lib/parseExcel';
 import { exportResultsToExcel } from '@/lib/exportResults';
 import { exportImagesToZip } from '@/lib/exportImages';
 import { supabase } from '@/integrations/supabase/client';
-import { computePerceptualHash, hammingHex, NEAR_DUPLICATE_THRESHOLD } from '@/lib/perceptualHash';
-import { runSemanticDedup } from '@/lib/semanticDedup';
 import { getAgentStatus } from '@/lib/agentStatus';
+
 import { FileUpload } from '@/components/FileUpload';
 import { DashboardSummary } from '@/components/DashboardSummary';
 import { AgentCard } from '@/components/AgentCard';
