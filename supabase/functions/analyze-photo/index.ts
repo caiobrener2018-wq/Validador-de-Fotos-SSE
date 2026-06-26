@@ -62,33 +62,43 @@ function buildSystemPrompt(companyName: string, segment: string, agentName: stri
     ? `\n\nCONTEXTO DA VISITA:
 - Agente Sebrae responsável: ${agentName || 'Não informado'}
 - Empresa visitada: ${companyName || 'Não informado'}
-- Segmento: ${segment || 'Não informado'}
-
-Use essas informações para verificar se o conteúdo visual é compatível com o segmento da empresa.`
+- Segmento: ${segment || 'Não informado'}`
     : '';
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
 
-IDENTIFICAÇÃO DO AGENTE SEBRAE — REGRA PRINCIPAL:
-NÃO use camisa polo branca como critério-chave. Roupa/crachá são apenas pistas fracas, pois o agente pode usar agasalho, estar em selfie, de lado, de costas ou com a roupa parcialmente oculta.
+IDENTIFICAÇÃO DO AGENTE SEBRAE — REGRA PRINCIPAL (LEIA COM ATENÇÃO):
+Polo branca e crachá NÃO são critérios-chave. O agente pode aparecer com agasalho, jaqueta, de lado, de costas, em selfie ou com a roupa parcialmente coberta. NÃO descarte alguém por não estar com polo branca.
 
-Quando houver FOTOS DE REFERÊNCIA, elas são amostras de ATENDIMENTOS DIFERENTES enviados pelo MESMO nome de agente da planilha: "${agentName || 'Não informado'}".
-A pessoa que se repete visualmente nessas referências é definitivamente o agente Sebrae daquele nome.
+Quando houver FOTOS DE REFERÊNCIA, elas são amostras de ATENDIMENTOS DIFERENTES enviadas pelo MESMO nome de agente: "${agentName || 'Não informado'}". A pessoa que se repete entre essas referências é, por definição, o agente Sebrae daquele nome.
 
-Você DEVE cruzar a FOTO PRINCIPAL com as referências assim:
-   • Primeiro, encontre nas referências qual rosto/pessoa aparece repetido em atendimentos diferentes.
-   • Depois, procure esse mesmo rosto/pessoa na FOTO PRINCIPAL.
-   • Se uma pessoa da FOTO PRINCIPAL coincide com a pessoa recorrente das referências, marque \`agente_sebrae\` = true, mesmo sem polo branca, sem crachá ou com agasalho.
-   • Compare rosto, cabelo, óculos, barba, formato do rosto, postura e aparência geral. Dê mais peso à repetição da pessoa entre atendimentos do que à roupa.
-   • Se as referências forem insuficientes, use fallback visual amplo: pessoa que aparenta ser visitante/consultor tirando foto de atendimento, com postura de agente, crachá/uniforme quando existir, ou pessoa recorrente em selfies de visitas.
+PROCESSO OBRIGATÓRIO de identificação por características físicas (não só rosto):
 
-REGRAS DE OURO (siga nesta ordem, sem exceção):
+Passo 1 — Construa um PERFIL FÍSICO do agente a partir das referências:
+  • Gênero aparente (homem / mulher / não-definido)
+  • Faixa etária aparente (jovem / adulto / sênior)
+  • Tom/cor da pele (clara / parda / negra / etc.)
+  • Cabelo: comprimento (curto, médio, longo), cor, textura (liso, ondulado, cacheado, careca, raspado), barba/bigode
+  • Formato do rosto, traços marcantes (nariz, queixo, sobrancelhas)
+  • Uso de óculos (e estilo, se possível)
+  • Compleição/porte físico (magro, médio, robusto, alto, baixo)
+  • Quaisquer marcas pessoais (tatuagens visíveis, brincos, piercings, acessórios recorrentes)
+  Identifique qual pessoa SE REPETE nas referências (cenários e empresas diferentes, mesma pessoa) — ESSA é o agente.
 
-A) IDENTIFIQUE O AGENTE E CONTE AS PESSOAS na FOTO PRINCIPAL (ignore as referências para contagem).
-   • \`agente_sebrae\` = true se: (i) alguém coincide com a pessoa recorrente das referências, OU (ii) claramente é um consultor/visitante do atendimento. Polo branca/crachá NÃO são obrigatórios.
-   • \`empresario_ou_funcionario\` = true SOMENTE quando houver 2+ pessoas na foto principal E uma delas for o agente. Ter 2 pessoas sem agente identificado NÃO conta. Ter apenas o agente sozinho NÃO conta.
+Passo 2 — Procure esse PERFIL na FOTO PRINCIPAL:
+  • Compare as características físicas, NÃO apenas o rosto. O ângulo e a roupa podem mudar; o gênero, tom de pele, cabelo, óculos, porte e traços faciais não mudam.
+  • Se alguém na foto principal combina com o perfil em pelo menos 3 dessas características fortes (ex.: mesmo gênero + mesmo tom de pele + mesmo cabelo + mesmos óculos), marque \`agente_sebrae\` = true MESMO sem polo branca, sem crachá, de máscara, com agasalho ou em ângulo diferente.
+  • Se a foto for selfie/close, dê peso máximo a: rosto, cabelo, óculos, barba, tom de pele.
 
-B) APROVAÇÃO. Marque \`aprovada\` = true se QUALQUER uma destas condições for verdadeira (e não houver IA):
+Passo 3 — Fallback (sem referências úteis): use bom senso visual. Qualquer pessoa que pareça um visitante/consultor do atendimento (postura de atendimento, crachá ou uniforme visível, ou claramente quem está conduzindo a visita) conta como agente.
+
+REGRAS DE OURO:
+
+A) IDENTIFIQUE O AGENTE E CONTE PESSOAS na FOTO PRINCIPAL (ignore as referências para contagem de pessoas).
+   • \`agente_sebrae\` = true conforme processo acima.
+   • \`empresario_ou_funcionario\` = true SOMENTE quando há 2+ pessoas na foto principal E uma delas é o agente. 2 pessoas sem agente NÃO conta. Apenas o agente sozinho NÃO conta.
+
+B) APROVAÇÃO. Marque \`aprovada\` = true se QUALQUER uma destas for verdadeira (e não houver IA):
    • agente_sebrae E empresario_ou_funcionario, OU
    • agente_sebrae E fachada, OU
    • agente_sebrae E interior, OU
@@ -97,16 +107,14 @@ B) APROVAÇÃO. Marque \`aprovada\` = true se QUALQUER uma destas condições fo
 
 C) INCONSISTENTE só quando: o agente não aparece na foto principal, OU o agente aparece sozinho contra um fundo COMPLETAMENTE VAZIO (parede 100% lisa, sem nenhum elemento).
 
-Critérios booleanos (true/false):
+Critérios booleanos:
 1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
-2 agente_sebrae: pessoa recorrente nas referências do mesmo nome de agente, ou claramente consultor/visitante. Não depende de polo branca.
-3 empresario_ou_funcionario: TRUE se há 2+ pessoas E o agente está entre elas. FALSE se há só 1 pessoa, se não há agente identificado, ou se há 2 pessoas mas nenhuma parece ser o agente.
-4 interior: ambiente comercial interno (produtos, balcão, prateleiras, escritório, oficina).
-5 fundo_valido: TRUE para QUALQUER fundo que não seja parede totalmente lisa/vazia. Rua, ambiente externo, espaço com móveis ou objetos quaisquer = TRUE. FALSE APENAS para parede 100% lisa sem nenhum elemento.
-6 contexto_segmento: TRUE se plausivelmente compatível com o segmento. Seja generoso.
-7 gerada_por_ia: indícios claros de IA generativa. Conservador.
-
-Aprovada = (regra B acima) E NÃO gerada_por_ia.
+2 agente_sebrae: pessoa que bate com o perfil físico recorrente das referências, ou claramente consultor/visitante. NÃO depende de polo branca.
+3 empresario_ou_funcionario: TRUE se há 2+ pessoas E o agente está entre elas.
+4 interior: ambiente comercial interno.
+5 fundo_valido: TRUE para QUALQUER fundo que não seja parede 100% lisa.
+6 contexto_segmento: seja generoso.
+7 gerada_por_ia: indícios claros de IA generativa; seja conservador.
 
 Responda APENAS JSON válido:
 {
@@ -120,8 +128,8 @@ Responda APENAS JSON válido:
     "contexto_segmento": true,
     "gerada_por_ia": false
   },
-  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras): tipo de local, NÚMERO DE PESSOAS, quem parece o agente (polo branca/crachá?), 2-3 objetos marcantes, iluminação.",
-  "justificativa": "Explicação breve em 1-2 frases: quantas pessoas, quem é o agente (por repetição nas referências ou outro motivo), e qual condição de aprovação foi atendida."
+  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras): tipo de local, NÚMERO DE PESSOAS, características físicas de quem parece o agente, 2-3 objetos marcantes, iluminação.",
+  "justificativa": "1-2 frases: quantas pessoas, qual o perfil físico recorrente do agente nas referências (gênero, pele, cabelo, óculos, porte) e como você o localizou na foto principal, e qual condição de aprovação foi atendida."
 }${contextInfo}`;
 }
 
