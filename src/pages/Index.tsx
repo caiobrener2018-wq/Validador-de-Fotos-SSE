@@ -4,9 +4,8 @@ import { parseExcelFile } from '@/lib/parseExcel';
 import { exportResultsToExcel } from '@/lib/exportResults';
 import { exportImagesToZip } from '@/lib/exportImages';
 import { supabase } from '@/integrations/supabase/client';
-import { computePerceptualHash, hammingHex, NEAR_DUPLICATE_THRESHOLD } from '@/lib/perceptualHash';
-import { runSemanticDedup } from '@/lib/semanticDedup';
 import { getAgentStatus } from '@/lib/agentStatus';
+
 import { FileUpload } from '@/components/FileUpload';
 import { DashboardSummary } from '@/components/DashboardSummary';
 import { AgentCard } from '@/components/AgentCard';
@@ -16,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
-import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X, Loader2, Copy } from 'lucide-react';
+import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
 // Três workers paralelos, cada um pacing ~480 RPM em um modelo diferente.
 // Combinado: até ~1440 RPM. Limites são por-modelo na OpenAI, então usar
@@ -30,7 +29,7 @@ const MIN_CONCURRENCY_PER_WORKER = 6;
 const INITIAL_CONCURRENCY_PER_WORKER = 20;
 const MAX_CONCURRENCY_PER_WORKER = 60;
 // Limita o índice perceptual para evitar lentidão O(n) crescente em lotes grandes.
-const PHASH_INDEX_MAX = 8000;
+
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
@@ -208,41 +207,34 @@ const Index = () => {
       return;
     }
 
-    // Mark all as analyzing upfront
-    tasks.forEach(t => { updated[t.agentIdx].photos[t.photoIdx].status = 'analyzing'; });
+    // Mark all as analyzing upfront + limpa metadados das fotos que vão rodar agora,
+    // para evitar que uma reanálise enxergue o próprio hash antigo como duplicata.
+    tasks.forEach(t => {
+      const ph = updated[t.agentIdx].photos[t.photoIdx];
+      ph.status = 'analyzing';
+      ph.imageHash = undefined;
+      ph.perceptualHash = undefined;
+      ph.duplicate = false;
+      ph.duplicateOf = undefined;
+      ph.duplicateReason = undefined;
+      ph.error = undefined;
+    });
     setAgents(updated.slice());
 
-    // Hash map exato (SHA-256) e índice perceptual (aHash) para near-duplicates.
-    // O índice perceptual é uma janela circular (FIFO) para evitar O(n) crescente
-    // que faz a análise ficar mais lenta a cada nova foto.
-    type DupRef = { agent: string; company: string; row: number };
+    // Dedup APENAS por hash exato (SHA-256). Cada entrada guarda agentIdx+photoIdx
+    // para nunca marcar a própria foto como duplicata de si mesma.
+    type DupRef = { agentIdx: number; photoIdx: number; agent: string; company: string; row: number };
     const hashMap = new Map<string, DupRef>();
-    const pHashSet = new Map<string, DupRef>(); // dedup exato de pHash em O(1)
-    const pHashIndex: { hash: string; ref: DupRef }[] = [];
-    // Pré-popula com fotos já analisadas que tenham hash
-    updated.forEach(a => a.photos.forEach(p => {
-      const ref: DupRef = { agent: a.name, company: a.companyName, row: a.excelRow };
-      if (p.imageHash && p.status === 'done' && !hashMap.has(p.imageHash)) hashMap.set(p.imageHash, ref);
-      if (p.perceptualHash && p.status === 'done' && !pHashSet.has(p.perceptualHash)) {
-        pHashSet.set(p.perceptualHash, ref);
-        pHashIndex.push({ hash: p.perceptualHash, ref });
+    // Pré-popula com fotos já analisadas que NÃO estão na fila (preserva originais)
+    const taskKey = new Set(tasks.map(t => `${t.agentIdx}:${t.photoIdx}`));
+    updated.forEach((a, aIdx) => a.photos.forEach((p, pIdx) => {
+      if (taskKey.has(`${aIdx}:${pIdx}`)) return;
+      if (!p.imageHash || p.status !== 'done') return;
+      if (!hashMap.has(p.imageHash)) {
+        hashMap.set(p.imageHash, { agentIdx: aIdx, photoIdx: pIdx, agent: a.name, company: a.companyName, row: a.excelRow });
       }
     }));
-    // Mantém a janela limitada
-    while (pHashIndex.length > PHASH_INDEX_MAX) pHashIndex.shift();
 
-    const findNearDuplicate = (h: string): DupRef | null => {
-      const exact = pHashSet.get(h);
-      if (exact) return exact;
-      for (let i = pHashIndex.length - 1; i >= 0; i--) {
-        if (hammingHex(pHashIndex[i].hash, h) <= NEAR_DUPLICATE_THRESHOLD) return pHashIndex[i].ref;
-      }
-      return null;
-    };
-
-    let done = 0;
-    let cursor = 0;
-    let lastProgress = -1;
 
     // Estado por worker (cada um = um modelo OpenAI com seu próprio RPM).
     type Worker = {
@@ -266,29 +258,28 @@ const Index = () => {
       console.info(`OpenAI rate limit (${worker.model}): reduzindo paralelismo para ${worker.currentConcurrency}. Retry em ${retryAfterMs}ms.`);
     };
 
+    let done = 0;
+    let cursor = 0;
+    let lastProgress = -1;
+
     const launch = async (worker: Worker, task: { agentIdx: number; photoIdx: number }) => {
       const agent = updated[task.agentIdx];
       const photo = agent.photos[task.photoIdx];
       try {
-        const analysisPromise = analyzeWithRetry({
+        const result = await analyzeWithRetry({
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
           agentName: agent.name,
         }, worker.model, shouldStop, waitIfPaused, (ms) => onRateLimit(worker, ms), worker.pacer);
-        const pHashPromise = computePerceptualHash(photo.url).catch(() => null);
-
-        const [result, pHash] = await Promise.all([analysisPromise, pHashPromise]);
         worker.stableCompletions++;
         if (worker.stableCompletions >= 30 && worker.currentConcurrency < MAX_CONCURRENCY_PER_WORKER) {
           worker.currentConcurrency++;
           worker.stableCompletions = 0;
         }
 
-        const selfRef: DupRef = { agent: agent.name, company: agent.companyName, row: agent.excelRow };
         const hash = result.imageHash as string | undefined;
         if (hash) photo.imageHash = hash;
-        if (pHash) photo.perceptualHash = pHash;
 
         if (result?.criterios?.gerada_por_ia) {
           const { imageHash, ...analysis } = result;
@@ -298,30 +289,24 @@ const Index = () => {
           let dupRef: DupRef | null = null;
           if (hash) {
             const existing = hashMap.get(hash);
-            if (existing && !(existing.agent === selfRef.agent && existing.row === selfRef.row)) {
+            // só conta como duplicata se for de OUTRA foto (outro agente/photoIdx)
+            if (existing && !(existing.agentIdx === task.agentIdx && existing.photoIdx === task.photoIdx)) {
               dupRef = existing;
             } else if (!existing) {
-              hashMap.set(hash, selfRef);
-            }
-          }
-          if (!dupRef && pHash) {
-            const near = findNearDuplicate(pHash);
-            if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) {
-              dupRef = near;
-            } else if (!pHashSet.has(pHash)) {
-              pHashSet.set(pHash, selfRef);
-              pHashIndex.push({ hash: pHash, ref: selfRef });
-              if (pHashIndex.length > PHASH_INDEX_MAX) {
-                const removed = pHashIndex.shift();
-                if (removed) pHashSet.delete(removed.hash);
-              }
+              hashMap.set(hash, {
+                agentIdx: task.agentIdx,
+                photoIdx: task.photoIdx,
+                agent: agent.name,
+                company: agent.companyName,
+                row: agent.excelRow,
+              });
             }
           }
           if (dupRef) {
             photo.status = 'duplicate';
             photo.duplicate = true;
-            photo.duplicateOf = dupRef;
-            photo.duplicateReason = hash && hashMap.get(hash) === dupRef ? 'exact' : 'near';
+            photo.duplicateOf = { agent: dupRef.agent, company: dupRef.company, row: dupRef.row };
+            photo.duplicateReason = 'exact';
           } else {
             const { imageHash, ...analysis } = result;
             photo.analysis = analysis;
@@ -345,6 +330,7 @@ const Index = () => {
       }
       scheduleFlush();
     };
+
 
     // Dispatcher: distribui tasks entre os workers, preenchendo aquele com
     // mais capacidade livre. Cada worker tem seu próprio pacing (~500 RPM).
@@ -381,49 +367,17 @@ const Index = () => {
 
     const wasCancelled = cancelledRef.current;
 
-    // Dedup semântica: agrupa fotos com cenas/pessoas iguais em ângulos diferentes
-    let semanticMarked = 0;
-    if (!wasCancelled) {
-      try {
-        setProgress(100);
-        const res = await runSemanticDedup(updated, (d, t) => {
-          // mantém o usuário informado pelo título do toast/log
-          if (d === t) console.info(`Embeddings semânticos: ${d}/${t}`);
-        });
-        semanticMarked = res.marked;
-        setAgents(updated.slice());
-      } catch (e) {
-        console.warn('Semantic dedup falhou (não crítico):', e);
-      }
-    }
-
     setIsAnalyzing(false);
     setIsPaused(false);
     pausedRef.current = false;
     cancelledRef.current = false;
     toast({
       title: wasCancelled ? 'Análise cancelada' : 'Análise concluída!',
-      description: `${done} fotos processadas${semanticMarked > 0 ? ` • ${semanticMarked} duplicatas semânticas detectadas` : ''}`,
+      description: `${done} fotos processadas`,
     });
   }, [toast]);
 
-  const [isSemanticRunning, setIsSemanticRunning] = useState(false);
-  const handleRunSemanticDedup = useCallback(async () => {
-    setIsSemanticRunning(true);
-    try {
-      const updated = agentsRef.current.map(a => ({ ...a, photos: a.photos.slice() }));
-      const res = await runSemanticDedup(updated);
-      setAgents(updated);
-      toast({
-        title: 'Detecção semântica concluída',
-        description: `${res.marked} duplicatas marcadas (de ${res.scanned} fotos analisadas)`,
-      });
-    } catch (e: any) {
-      toast({ title: 'Erro na detecção semântica', description: e?.message || 'Falha', variant: 'destructive' });
-    } finally {
-      setIsSemanticRunning(false);
-    }
-  }, [toast]);
+
 
   const handlePauseToggle = useCallback(() => {
     pausedRef.current = !pausedRef.current;
@@ -513,12 +467,6 @@ const Index = () => {
               {hasErrors && !isAnalyzing && (
                 <Button variant="outline" onClick={() => runAnalysis(agents, true)}>
                   <RefreshCw className="h-4 w-4 mr-2" /> Reanalisar Falhas
-                </Button>
-              )}
-              {hasResults && !isAnalyzing && (
-                <Button variant="outline" onClick={handleRunSemanticDedup} disabled={isSemanticRunning}>
-                  {isSemanticRunning ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Copy className="h-4 w-4 mr-2" />}
-                  Detectar duplicatas semânticas
                 </Button>
               )}
               {isAnalyzing && (
