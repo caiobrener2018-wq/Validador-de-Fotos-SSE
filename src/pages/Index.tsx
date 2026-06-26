@@ -71,7 +71,7 @@ async function analyzeWithRetry(
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
   waitForStartSlot: () => Promise<void>,
-  maxRetries = 8
+  maxRetries = 12
 ): Promise<any> {
   const controlledDelay = async (ms: number) => {
     let remaining = ms;
