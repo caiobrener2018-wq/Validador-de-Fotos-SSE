@@ -69,37 +69,33 @@ Use essas informações para verificar se o conteúdo visual é compatível com 
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
 
+REGRA DE OURO: conte primeiro QUANTAS PESSOAS aparecem na foto (rostos, corpos, braços, ombros, cabelos — qualquer parte humana visível, mesmo cortada, ao fundo, de perfil, desfocada ou parcialmente fora do enquadramento). Se houver 2 ou mais pessoas, então quase certamente uma é o agente e a outra é o empresário/funcionário — marque AMBOS \`agente_sebrae\` e \`empresario_ou_funcionario\` como true. Selfies com duas pessoas lado a lado são o padrão típico de validação deste programa e devem ser aprovadas.
+
 Critérios booleanos (true/false):
 1 fachada: fachada, marca ou logotipo do estabelecimento visível.
-2 agente_sebrae: aparece o consultor/agente Sebrae (visitante externo — crachá, pasta, roupa social/uniforme institucional, postura de visita).
-3 empresario_ou_funcionario: **CRITÉRIO PRINCIPAL — seja generoso e criterioso ao examinar a foto inteira**. Marque true se houver QUALQUER segunda pessoa além do agente, especialmente quando:
-   - Aparece ao lado, atrás ou próxima ao agente (mesmo parcialmente, de perfil, ao fundo, fora de foco).
-   - Está olhando para a câmera junto com o agente (foto posada lado a lado é o padrão típico de validação).
-   - Segura um panfleto, folder, material ou cartão com a marca "Sebrae" ou "Sebrae na Sua Empresa" (forte indicador de empresário recebendo a visita).
-   - Veste uniforme da loja, avental, jaleco, crachá do estabelecimento, ou roupa informal/de trabalho diferente do agente.
-   - Está atrás do balcão, operando equipamento, atendendo cliente, ou em postura de quem trabalha no local.
-   Só marque false se a foto tiver APENAS o agente sozinho, ou nenhuma pessoa, ou apenas clientes claramente de passagem sem interação. Na dúvida entre "só agente" e "agente + alguém", marque true.
+2 agente_sebrae: aparece o consultor/agente Sebrae (visitante externo). Em foto com 2+ pessoas, assuma que uma delas é o agente, a menos que claramente sejam apenas clientes/transeuntes.
+3 empresario_ou_funcionario: **REGRA SIMPLES — se há 2 ou mais pessoas na imagem, marque true.** Vale para qualquer segunda pessoa: ao lado, atrás, à frente, ao fundo, parcialmente visível, de perfil, desfocada, segurando material Sebrae, com avental/jaleco/uniforme, atrás do balcão, ou simplesmente posando junto. Só marque false se houver APENAS UMA pessoa (o agente sozinho) ou nenhuma pessoa na foto. Na dúvida, marque true.
 4 interior: ambiente comercial interno (produtos, balcão, escritório, oficina, equipamentos).
 5 fundo_valido: rejeite parede lisa/branca, fundo neutro ou sem contexto comercial.
 6 contexto_segmento: imagem compatível com o segmento informado.
 7 gerada_por_ia: indícios de imagem gerada/editada por IA — mãos/dedos deformados, texto ilegível em placas/produtos, simetria antinatural, iluminação inconsistente, fundo "plástico", olhos/orelhas assimétricos, repetição de padrões. Seja conservador: marque true só com indícios claros.
 
-Aprovada = (fachada OU agente_sebrae OU empresario_ou_funcionario OU interior) E fundo_valido E contexto_segmento E NÃO gerada_por_ia.
+Aprovada = (agente_sebrae E empresario_ou_funcionario) E NÃO gerada_por_ia.
 
 Responda APENAS JSON válido:
 {
   "aprovada": true,
   "criterios": {
     "fachada": true,
-    "agente_sebrae": false,
+    "agente_sebrae": true,
     "empresario_ou_funcionario": true,
     "interior": true,
     "fundo_valido": true,
     "contexto_segmento": true,
     "gerada_por_ia": false
   },
-  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras) com: tipo de local, número e descrição visual breve das pessoas (gênero aparente, cor/tipo de roupa, postura), 2-3 objetos marcantes, cor/iluminação dominante. Use linguagem padronizada para que cenas iguais gerem textos parecidos. Ex.: 'Interior de padaria com balcão de pães; agente homem camisa azul ao lado de mulher avental vermelho segurando panfleto Sebrae; luz amarela'.",
-  "justificativa": "Explicação breve em 1-2 frases"
+  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras): tipo de local, NÚMERO DE PESSOAS e breve descrição (gênero aparente, cor/tipo de roupa), 2-3 objetos marcantes, iluminação. Ex.: 'Interior de padaria com balcão; 2 pessoas — homem camisa azul (agente) ao lado de mulher avental vermelho; luz amarela'.",
+  "justificativa": "Explicação breve em 1-2 frases, começando por quantas pessoas aparecem."
 }${contextInfo}`;
 }
 
