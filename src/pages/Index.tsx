@@ -260,29 +260,28 @@ const Index = () => {
       console.info(`OpenAI rate limit (${worker.model}): reduzindo paralelismo para ${worker.currentConcurrency}. Retry em ${retryAfterMs}ms.`);
     };
 
+    let done = 0;
+    let cursor = 0;
+    let lastProgress = -1;
+
     const launch = async (worker: Worker, task: { agentIdx: number; photoIdx: number }) => {
       const agent = updated[task.agentIdx];
       const photo = agent.photos[task.photoIdx];
       try {
-        const analysisPromise = analyzeWithRetry({
+        const result = await analyzeWithRetry({
           url: photo.url,
           companyName: agent.companyName,
           segment: agent.segment,
           agentName: agent.name,
         }, worker.model, shouldStop, waitIfPaused, (ms) => onRateLimit(worker, ms), worker.pacer);
-        const pHashPromise = computePerceptualHash(photo.url).catch(() => null);
-
-        const [result, pHash] = await Promise.all([analysisPromise, pHashPromise]);
         worker.stableCompletions++;
         if (worker.stableCompletions >= 30 && worker.currentConcurrency < MAX_CONCURRENCY_PER_WORKER) {
           worker.currentConcurrency++;
           worker.stableCompletions = 0;
         }
 
-        const selfRef: DupRef = { agent: agent.name, company: agent.companyName, row: agent.excelRow };
         const hash = result.imageHash as string | undefined;
         if (hash) photo.imageHash = hash;
-        if (pHash) photo.perceptualHash = pHash;
 
         if (result?.criterios?.gerada_por_ia) {
           const { imageHash, ...analysis } = result;
@@ -292,30 +291,24 @@ const Index = () => {
           let dupRef: DupRef | null = null;
           if (hash) {
             const existing = hashMap.get(hash);
-            if (existing && !(existing.agent === selfRef.agent && existing.row === selfRef.row)) {
+            // só conta como duplicata se for de OUTRA foto (outro agente/photoIdx)
+            if (existing && !(existing.agentIdx === task.agentIdx && existing.photoIdx === task.photoIdx)) {
               dupRef = existing;
             } else if (!existing) {
-              hashMap.set(hash, selfRef);
-            }
-          }
-          if (!dupRef && pHash) {
-            const near = findNearDuplicate(pHash);
-            if (near && !(near.agent === selfRef.agent && near.row === selfRef.row)) {
-              dupRef = near;
-            } else if (!pHashSet.has(pHash)) {
-              pHashSet.set(pHash, selfRef);
-              pHashIndex.push({ hash: pHash, ref: selfRef });
-              if (pHashIndex.length > PHASH_INDEX_MAX) {
-                const removed = pHashIndex.shift();
-                if (removed) pHashSet.delete(removed.hash);
-              }
+              hashMap.set(hash, {
+                agentIdx: task.agentIdx,
+                photoIdx: task.photoIdx,
+                agent: agent.name,
+                company: agent.companyName,
+                row: agent.excelRow,
+              });
             }
           }
           if (dupRef) {
             photo.status = 'duplicate';
             photo.duplicate = true;
-            photo.duplicateOf = dupRef;
-            photo.duplicateReason = hash && hashMap.get(hash) === dupRef ? 'exact' : 'near';
+            photo.duplicateOf = { agent: dupRef.agent, company: dupRef.company, row: dupRef.row };
+            photo.duplicateReason = 'exact';
           } else {
             const { imageHash, ...analysis } = result;
             photo.analysis = analysis;
@@ -339,6 +332,7 @@ const Index = () => {
       }
       scheduleFlush();
     };
+
 
     // Dispatcher: distribui tasks entre os workers, preenchendo aquele com
     // mais capacidade livre. Cada worker tem seu próprio pacing (~500 RPM).
