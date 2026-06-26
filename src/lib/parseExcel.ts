@@ -138,18 +138,19 @@ export function parseExcelFile(file: File): Promise<AgentData[]> {
           });
         }
 
-        // Detect duplicate photo URLs across all agents (mesma URL exata)
+        // Detect duplicate photo URLs across DIFFERENT attendances only (mesma URL exata).
+        // Repetição dentro da mesma linha/atendimento não deve gerar duplicidade.
         const urlMap = new Map<string, { agent: string; company: string; row: number }>();
         agents.forEach(a => {
           a.photos.forEach(p => {
             const key = p.url.trim().toLowerCase();
             const existing = urlMap.get(key);
-            if (existing) {
+            if (existing && existing.row !== a.excelRow) {
               p.duplicate = true;
               p.status = 'duplicate';
               p.duplicateOf = existing;
               p.duplicateReason = 'exact';
-            } else {
+            } else if (!existing) {
               urlMap.set(key, { agent: a.name, company: a.companyName, row: a.excelRow });
             }
           });

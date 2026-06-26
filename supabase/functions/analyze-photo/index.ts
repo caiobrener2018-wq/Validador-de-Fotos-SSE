@@ -69,21 +69,23 @@ Use essas informações para verificar se o conteúdo visual é compatível com 
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
 
-IDENTIFICAÇÃO DO AGENTE SEBRAE (LEIA COM ATENÇÃO):
-O agente Sebrae normalmente usa CAMISA GOLA POLO BRANCA e/ou CRACHÁ pendurado no pescoço. Use isso como pista principal.
+IDENTIFICAÇÃO DO AGENTE SEBRAE — REGRA PRINCIPAL:
+NÃO use camisa polo branca como critério-chave. Roupa/crachá são apenas pistas fracas, pois o agente pode usar agasalho, estar em selfie, de lado, de costas ou com a roupa parcialmente oculta.
 
-PORÉM — pistas visuais podem estar OCULTAS: o agente pode estar de agasalho/jaqueta por cima da polo, de costas, em selfie de perto, em ambiente frio, etc. Nesses casos polo/crachá NÃO ficam visíveis.
+Quando houver FOTOS DE REFERÊNCIA, elas são amostras de ATENDIMENTOS DIFERENTES enviados pelo MESMO nome de agente da planilha: "${agentName || 'Não informado'}".
+A pessoa que se repete visualmente nessas referências é definitivamente o agente Sebrae daquele nome.
 
-POR ISSO, quando houver FOTOS DE REFERÊNCIA (outras fotos enviadas pelo MESMO agente, neste mesmo lote), você DEVE comparar o ROSTO das pessoas:
-   • Se o rosto/feições de alguém na FOTO PRINCIPAL aparece TAMBÉM em alguma foto de referência (a mesma pessoa entre as fotos), essa pessoa É o agente Sebrae, mesmo que NÃO esteja com polo branca/crachá visível na foto atual. Marque \`agente_sebrae\` = true.
-   • Compare cabelo, formato de rosto, óculos, barba, traços faciais. Roupas mudam — rosto não.
-   • Nas fotos de referência, o agente costuma aparecer com polo branca/crachá em pelo menos uma — use essa para "aprender" o rosto e depois reconhecê-lo nas demais.
-   • Se NÃO houver fotos de referência ou nenhum rosto recorrente, caia para a pista visual padrão (polo branca/crachá ou consultor visitante claramente).
+Você DEVE cruzar a FOTO PRINCIPAL com as referências assim:
+   • Primeiro, encontre nas referências qual rosto/pessoa aparece repetido em atendimentos diferentes.
+   • Depois, procure esse mesmo rosto/pessoa na FOTO PRINCIPAL.
+   • Se uma pessoa da FOTO PRINCIPAL coincide com a pessoa recorrente das referências, marque \`agente_sebrae\` = true, mesmo sem polo branca, sem crachá ou com agasalho.
+   • Compare rosto, cabelo, óculos, barba, formato do rosto, postura e aparência geral. Dê mais peso à repetição da pessoa entre atendimentos do que à roupa.
+   • Se as referências forem insuficientes, use fallback visual amplo: pessoa que aparenta ser visitante/consultor tirando foto de atendimento, com postura de agente, crachá/uniforme quando existir, ou pessoa recorrente em selfies de visitas.
 
 REGRAS DE OURO (siga nesta ordem, sem exceção):
 
 A) IDENTIFIQUE O AGENTE E CONTE AS PESSOAS na FOTO PRINCIPAL (ignore as referências para contagem).
-   • \`agente_sebrae\` = true se: (i) alguém tem polo branca/crachá visível, OU (ii) o rosto de alguém coincide com o rosto recorrente das fotos de referência, OU (iii) claramente é um consultor visitante.
+   • \`agente_sebrae\` = true se: (i) alguém coincide com a pessoa recorrente das referências, OU (ii) claramente é um consultor/visitante do atendimento. Polo branca/crachá NÃO são obrigatórios.
    • \`empresario_ou_funcionario\` = true SOMENTE quando houver 2+ pessoas na foto principal E uma delas for o agente. Ter 2 pessoas sem agente identificado NÃO conta. Ter apenas o agente sozinho NÃO conta.
 
 B) APROVAÇÃO. Marque \`aprovada\` = true se QUALQUER uma destas condições for verdadeira (e não houver IA):
@@ -97,7 +99,7 @@ C) INCONSISTENTE só quando: o agente não aparece na foto principal, OU o agent
 
 Critérios booleanos (true/false):
 1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
-2 agente_sebrae: pessoa com polo branca e/ou crachá, ou claramente um consultor visitante.
+2 agente_sebrae: pessoa recorrente nas referências do mesmo nome de agente, ou claramente consultor/visitante. Não depende de polo branca.
 3 empresario_ou_funcionario: TRUE se há 2+ pessoas E o agente está entre elas. FALSE se há só 1 pessoa, se não há agente identificado, ou se há 2 pessoas mas nenhuma parece ser o agente.
 4 interior: ambiente comercial interno (produtos, balcão, prateleiras, escritório, oficina).
 5 fundo_valido: TRUE para QUALQUER fundo que não seja parede totalmente lisa/vazia. Rua, ambiente externo, espaço com móveis ou objetos quaisquer = TRUE. FALSE APENAS para parede 100% lisa sem nenhum elemento.
@@ -119,7 +121,7 @@ Responda APENAS JSON válido:
     "gerada_por_ia": false
   },
   "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras): tipo de local, NÚMERO DE PESSOAS, quem parece o agente (polo branca/crachá?), 2-3 objetos marcantes, iluminação.",
-  "justificativa": "Explicação breve em 1-2 frases: quantas pessoas, quem é o agente (e por quê), e qual condição de aprovação foi atendida."
+  "justificativa": "Explicação breve em 1-2 frases: quantas pessoas, quem é o agente (por repetição nas referências ou outro motivo), e qual condição de aprovação foi atendida."
 }${contextInfo}`;
 }
 
@@ -135,17 +137,27 @@ const EMPTY_CRITERIA = {
 
 function normalize(raw: any) {
   const c = (raw && typeof raw === "object" && raw.criterios) || {};
+  const text = `${raw?.scene_signature || ""} ${raw?.justificativa || ""}`.toLowerCase();
+  const mentionsTwoPeople = /\b(duas|dois|2|dupla)\s+pessoas\b|\b2\+\s*pessoas\b|\bmais de uma pessoa\b/.test(text);
+  const negatesAgent = /\b(n[aã]o|sem)\b.{0,40}\b(agente|consultor|sebrae)\b|\b(agente|consultor|sebrae)\b.{0,30}\bn[aã]o\b.{0,20}\b(aparece|identificado|identificada|vis[ií]vel)\b/.test(text);
+  const mentionsAgent = !negatesAgent && /\b(agente|consultor|sebrae|atendente|crach[aá]|uniforme|polo)\b/.test(text);
+  const mentionsInterior = /\b(interior|ambiente interno|loja|balc[aã]o|prateleira|produtos|escrit[oó]rio|oficina|comercial)\b/.test(text);
+  const mentionsValidBackground = /\b(fundo ok|fundo v[aá]lido|ambiente|rua|externo|interno|m[oó]veis|objetos|loja|empresa|comercial)\b/.test(text);
   const criterios = {
     fachada: !!c.fachada,
-    agente_sebrae: !!(c.agente_sebrae ?? c.agente),
+    agente_sebrae: !!(c.agente_sebrae ?? c.agente) || mentionsAgent,
     empresario_ou_funcionario: !!(c.empresario_ou_funcionario ?? c.empresario),
-    interior: !!c.interior,
-    fundo_valido: !!c.fundo_valido,
+    interior: !!c.interior || mentionsInterior,
+    fundo_valido: !!c.fundo_valido || mentionsValidBackground,
     contexto_segmento: !!c.contexto_segmento,
     gerada_por_ia: !!c.gerada_por_ia,
   };
+  if (criterios.agente_sebrae && mentionsTwoPeople) criterios.empresario_ou_funcionario = true;
+  const computedApproved = criterios.agente_sebrae
+    && (criterios.empresario_ou_funcionario || criterios.fachada || criterios.interior || criterios.fundo_valido)
+    && !criterios.gerada_por_ia;
   return {
-    aprovada: !!raw?.aprovada && !criterios.gerada_por_ia,
+    aprovada: (!!raw?.aprovada || computedApproved) && !criterios.gerada_por_ia,
     criterios,
     scene_signature: typeof raw?.scene_signature === "string" ? raw.scene_signature.slice(0, 400) : "",
     justificativa: typeof raw?.justificativa === "string" ? raw.justificativa : "",
@@ -179,14 +191,14 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
   if (referenceUrls.length > 0) {
     userContent.push({
       type: "text",
-      text: `FOTOS DE REFERÊNCIA (${referenceUrls.length}) — outras fotos enviadas pelo MESMO agente neste lote. Use-as APENAS para reconhecer o ROSTO do agente. NÃO conte pessoas delas, NÃO use o cenário delas. Elas são só pista de identidade:`,
+      text: `FOTOS DE REFERÊNCIA (${referenceUrls.length}) — amostras de ATENDIMENTOS DIFERENTES do MESMO nome de agente: "${agentName || 'N/A'}". A pessoa que se repete nessas imagens é o agente. Use-as APENAS para reconhecer essa pessoa/rosto; NÃO conte pessoas delas e NÃO use o cenário delas:`,
     });
     for (const u of referenceUrls) {
-      userContent.push({ type: "image_url", image_url: { url: u, detail: "low" } });
+      userContent.push({ type: "image_url", image_url: { url: u, detail: "high" } });
     }
   }
   userContent.push({ type: "text", text: `FOTO PRINCIPAL — analise ESTA foto da empresa "${companyName || 'N/A'}". Conte pessoas e avalie o cenário SOMENTE dela:` });
-  userContent.push({ type: "image_url", image_url: { url: imageUrl, detail: "low" } });
+  userContent.push({ type: "image_url", image_url: { url: imageUrl, detail: "high" } });
 
   const body: Record<string, unknown> = {
     model,
@@ -237,7 +249,7 @@ serve(async (req) => {
     const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL;
     const systemPrompt = buildSystemPrompt(companyName || "", segment || "", agentName || "");
     const refs: string[] = Array.isArray(referenceUrls)
-      ? referenceUrls.filter((u: unknown) => typeof u === "string" && u && u !== imageUrl).slice(0, 3)
+      ? referenceUrls.filter((u: unknown) => typeof u === "string" && u && u !== imageUrl).slice(0, 6)
       : [];
 
     // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
