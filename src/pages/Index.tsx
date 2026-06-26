@@ -235,8 +235,6 @@ const Index = () => {
       }
     }));
 
-    let cursor = 0;
-    let lastProgress = -1;
 
     // Estado por worker (cada um = um modelo OpenAI com seu próprio RPM).
     type Worker = {
