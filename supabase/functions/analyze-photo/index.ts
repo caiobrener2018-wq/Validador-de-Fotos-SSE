@@ -69,26 +69,32 @@ Use essas informações para verificar se o conteúdo visual é compatível com 
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
 
+IDENTIFICAÇÃO DO AGENTE SEBRAE:
+O agente Sebrae normalmente usa CAMISA GOLA POLO BRANCA e/ou CRACHÁ pendurado no pescoço. Se houver alguém na foto com essas características, MUITO provavelmente é o agente. Use isso como pista principal para marcar \`agente_sebrae\` = true. Se ninguém na foto tem polo branca/crachá e não há outro indicativo claro de um consultor visitante, \`agente_sebrae\` pode ser false.
+
 REGRAS DE OURO (siga nesta ordem, sem exceção):
 
-A) CONTE AS PESSOAS PRIMEIRO. Olhe a foto inteira (centro, bordas, fundo, reflexos) e conte rostos/corpos/ombros/cabelos/braços visíveis — mesmo cortados, de perfil, desfocados, ao fundo, parcialmente atrás de objetos. Se houver 2 OU MAIS pessoas → \`agente_sebrae\` = true E \`empresario_ou_funcionario\` = true, SEMPRE. Selfies com duas pessoas lado a lado são o padrão típico do programa. Não invente justificativa para negar a segunda pessoa: se você descreveu "duas pessoas" em qualquer parte do texto, \`empresario_ou_funcionario\` OBRIGATORIAMENTE é true.
+A) IDENTIFIQUE O AGENTE E CONTE AS PESSOAS. Procure pessoa com polo branca e/ou crachá. Conte os rostos/corpos visíveis na foto (centro, bordas, fundo).
+   • \`agente_sebrae\` = true SOMENTE se houver alguém com características de agente (polo branca, crachá) ou claramente um consultor visitando.
+   • \`empresario_ou_funcionario\` = true SOMENTE quando houver 2+ pessoas E uma delas for o agente (agente + outra pessoa). Ter 2 pessoas sem agente identificado NÃO conta. Ter apenas o agente sozinho NÃO conta.
 
 B) APROVAÇÃO. Marque \`aprovada\` = true se QUALQUER uma destas condições for verdadeira (e não houver IA):
-   • agente_sebrae E empresario_ou_funcionario (2+ pessoas), OU
-   • agente_sebrae E fachada (agente sozinho mas com fachada/marca/logo da empresa visível), OU
-   • agente_sebrae E interior (agente sozinho mas dentro de um ambiente comercial: balcão, prateleiras, produtos, equipamentos, oficina, escritório etc.).
-   Compatibilidade de segmento NÃO afeta a aprovação — uma foto pode ser aprovada mesmo que o segmento ao fundo não case 100%.
+   • agente_sebrae E empresario_ou_funcionario (agente + outra pessoa), OU
+   • agente_sebrae E fachada (agente com fachada/marca/logo visível), OU
+   • agente_sebrae E interior (agente em ambiente comercial: balcão, prateleiras, produtos, oficina, escritório), OU
+   • agente_sebrae E fundo_valido (agente em qualquer fundo que NÃO seja parede totalmente lisa/vazia — rua, ambiente externo genérico, espaço com móveis/objetos quaisquer já vale).
+   Compatibilidade de segmento NÃO afeta a aprovação.
 
-C) INCONSISTENTE só quando: o agente não aparece, OU aparece sozinho em fundo vazio/neutro (parede lisa, paisagem, carro, rua sem identificação) sem fachada nem interior comercial.
+C) INCONSISTENTE só quando: o agente não aparece na foto, OU o agente aparece sozinho contra um fundo COMPLETAMENTE VAZIO (apenas parede lisa, sem nenhum elemento). Fundo genérico sem fachada/elementos da empresa NÃO é problema — só rejeite se for parede 100% lisa e vazia.
 
 Critérios booleanos (true/false):
 1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
-2 agente_sebrae: aparece o consultor/agente Sebrae. Em foto com 2+ pessoas, assuma que uma delas é o agente.
-3 empresario_ou_funcionario: TRUE sempre que houver 2+ pessoas na foto (ver regra A). FALSE apenas quando há UMA única pessoa (o agente) ou nenhuma pessoa.
-4 interior: ambiente comercial interno (produtos, balcão, prateleiras, escritório, oficina, equipamentos, vitrines internas).
-5 fundo_valido: TRUE se há contexto comercial (interior ou fachada) OU se há 2+ pessoas. FALSE só para fundo totalmente neutro (parede lisa, céu, paisagem sem estabelecimento) com apenas o agente.
-6 contexto_segmento: TRUE se a cena é plausivelmente compatível com o segmento. Seja generoso — só FALSE em clara incompatibilidade.
-7 gerada_por_ia: indícios claros de IA generativa (mãos deformadas, texto ilegível, simetria artificial, fundo "plástico"). Conservador.
+2 agente_sebrae: pessoa com polo branca e/ou crachá, ou claramente um consultor visitante.
+3 empresario_ou_funcionario: TRUE se há 2+ pessoas E o agente está entre elas. FALSE se há só 1 pessoa, se não há agente identificado, ou se há 2 pessoas mas nenhuma parece ser o agente.
+4 interior: ambiente comercial interno (produtos, balcão, prateleiras, escritório, oficina).
+5 fundo_valido: TRUE para QUALQUER fundo que não seja parede totalmente lisa/vazia. Rua, ambiente externo, espaço com móveis ou objetos quaisquer = TRUE. FALSE APENAS para parede 100% lisa sem nenhum elemento.
+6 contexto_segmento: TRUE se plausivelmente compatível com o segmento. Seja generoso.
+7 gerada_por_ia: indícios claros de IA generativa. Conservador.
 
 Aprovada = (regra B acima) E NÃO gerada_por_ia.
 
@@ -104,8 +110,8 @@ Responda APENAS JSON válido:
     "contexto_segmento": true,
     "gerada_por_ia": false
   },
-  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras): tipo de local, NÚMERO DE PESSOAS e breve descrição (gênero aparente, cor/tipo de roupa), 2-3 objetos marcantes, iluminação. Ex.: 'Interior de padaria com balcão; 2 pessoas — homem camisa azul (agente) ao lado de mulher avental vermelho; luz amarela'.",
-  "justificativa": "Explicação breve em 1-2 frases, começando por quantas pessoas aparecem."
+  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras): tipo de local, NÚMERO DE PESSOAS, quem parece o agente (polo branca/crachá?), 2-3 objetos marcantes, iluminação.",
+  "justificativa": "Explicação breve em 1-2 frases: quantas pessoas, quem é o agente (e por quê), e qual condição de aprovação foi atendida."
 }${contextInfo}`;
 }
 
