@@ -32,6 +32,7 @@ const MAX_CONCURRENCY_PER_WORKER = 60;
 
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
+const MAX_AGENT_REFERENCE_IMAGES = 6;
 
 async function analyzeOnce(
   photo: { url: string; companyName: string; segment: string; agentName: string; referenceUrls?: string[] },
@@ -245,25 +246,32 @@ const Index = () => {
     }));
 
     // Pool de fotos por nome do agente — usado como referência facial.
-    // A IA compara o rosto do agente nas referências para identificá-lo na foto
-    // principal mesmo quando polo branca/crachá não estão visíveis.
-    const REF_POOL_LIMIT = 8; // sortear no máximo desse pool por análise
-    const agentPhotoPool = new Map<string, string[]>();
+    // As referências são de ATENDIMENTOS DIFERENTES: a pessoa que se repete
+    // nelas é tratada pela IA como o agente, sem depender de polo branca/crachá.
+    type AgentReference = { url: string; row: number; company: string };
+    const agentPhotoPool = new Map<string, AgentReference[]>();
     updated.forEach(a => {
       const key = (a.name || '').trim().toLowerCase();
       if (!key) return;
       const arr = agentPhotoPool.get(key) ?? [];
       for (const p of a.photos) {
         if (!p.url) continue;
-        if (arr.includes(p.url)) continue;
-        arr.push(p.url);
-        if (arr.length >= REF_POOL_LIMIT) break;
+        if (arr.some(ref => ref.url === p.url)) continue;
+        arr.push({ url: p.url, row: a.excelRow, company: a.companyName });
       }
       agentPhotoPool.set(key, arr);
     });
-    const pickReferences = (agentName: string, currentUrl: string): string[] => {
+    const pickReferences = (agentName: string, currentUrl: string, currentRow: number): string[] => {
       const pool = agentPhotoPool.get((agentName || '').trim().toLowerCase()) ?? [];
-      return pool.filter(u => u !== currentUrl).slice(0, 3);
+      const byAttendance = new Map<number, AgentReference>();
+      for (const ref of pool) {
+        if (ref.url === currentUrl || ref.row === currentRow) continue;
+        if (!byAttendance.has(ref.row)) byAttendance.set(ref.row, ref);
+      }
+      return Array.from(byAttendance.values())
+        .sort((a, b) => Math.abs(a.row - currentRow) - Math.abs(b.row - currentRow) || a.row - b.row)
+        .slice(0, MAX_AGENT_REFERENCE_IMAGES)
+        .map(ref => ref.url);
     };
 
 
@@ -304,7 +312,7 @@ const Index = () => {
           companyName: agent.companyName,
           segment: agent.segment,
           agentName: agent.name,
-          referenceUrls: pickReferences(agent.name, photo.url),
+          referenceUrls: pickReferences(agent.name, photo.url, agent.excelRow),
         }, worker.model, shouldStop, waitIfPaused, (ms) => onRateLimit(worker, ms), worker.pacer);
 
         worker.stableCompletions++;

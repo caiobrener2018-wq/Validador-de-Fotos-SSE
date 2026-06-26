@@ -25,8 +25,11 @@ export function getAgentStatus(agent: AgentData): AgentStatus {
 
   // Aprovado se QUALQUER foto satisfizer uma das condições:
   //   (a) agente + segunda pessoa (empresário/funcionário), OU
-  //   (b) agente + contexto corporativo da empresa (fachada OU interior).
+  //   (b) agente + contexto corporativo/fundo não vazio.
+  // Também respeita `analysis.aprovada`, porque a Edge Function já normaliza
+  // contradições do modelo (ex.: justificativa diz que aprovou, mas algum boolean veio errado).
   const anyApproved = donePhotos.some(p => {
+    if (p.analysis!.aprovada) return true;
     const c = p.analysis!.criterios;
     if (!c.agente_sebrae) return false;
     return c.empresario_ou_funcionario || c.fachada || c.interior || c.fundo_valido;
