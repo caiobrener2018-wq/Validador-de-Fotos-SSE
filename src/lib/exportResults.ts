@@ -59,18 +59,12 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
   // Altura padrão das próximas linhas
   ws.properties.defaultRowHeight = 18;
 
-  // Larguras razoáveis (sem inflar): URL e textos longos ganham mais.
+  // Larguras enxutas: baseadas no comprimento do título do cabeçalho.
   headers.forEach((h, idx) => {
     const col = ws.getColumn(idx + 1);
-    const nh = h.toLowerCase();
-    if (nh.includes('foto')) col.width = 55;
-    else if (nh.includes('justificativa')) col.width = 60;
-    else if (nh.includes('anotac') || nh.includes('orientac') || nh.includes('devolutiva') || nh.includes('soluc')) col.width = 50;
-    else if (nh.includes('status')) col.width = 18;
-    else if (nh.includes('grupo')) col.width = 12;
-    else if (nh.includes('cnpj') || nh.includes('cpf')) col.width = 20;
-    else col.width = Math.max(14, Math.min(30, h.length + 2));
+    col.width = Math.max(8, Math.min(28, h.length + 2));
   });
+
 
   // Paleta por status — linha inteira recebe a cor de fundo.
   const palette: Record<AgentStatus, string | null> = {
