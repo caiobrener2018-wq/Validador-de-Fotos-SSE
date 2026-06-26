@@ -69,18 +69,28 @@ Use essas informações para verificar se o conteúdo visual é compatível com 
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
 
-REGRA DE OURO: conte primeiro QUANTAS PESSOAS aparecem na foto (rostos, corpos, braços, ombros, cabelos — qualquer parte humana visível, mesmo cortada, ao fundo, de perfil, desfocada ou parcialmente fora do enquadramento). Se houver 2 ou mais pessoas, então quase certamente uma é o agente e a outra é o empresário/funcionário — marque AMBOS \`agente_sebrae\` e \`empresario_ou_funcionario\` como true. Selfies com duas pessoas lado a lado são o padrão típico de validação deste programa e devem ser aprovadas.
+REGRAS DE OURO (siga nesta ordem, sem exceção):
+
+A) CONTE AS PESSOAS PRIMEIRO. Olhe a foto inteira (centro, bordas, fundo, reflexos) e conte rostos/corpos/ombros/cabelos/braços visíveis — mesmo cortados, de perfil, desfocados, ao fundo, parcialmente atrás de objetos. Se houver 2 OU MAIS pessoas → \`agente_sebrae\` = true E \`empresario_ou_funcionario\` = true, SEMPRE. Selfies com duas pessoas lado a lado são o padrão típico do programa. Não invente justificativa para negar a segunda pessoa: se você descreveu "duas pessoas" em qualquer parte do texto, \`empresario_ou_funcionario\` OBRIGATORIAMENTE é true.
+
+B) APROVAÇÃO. Marque \`aprovada\` = true se QUALQUER uma destas condições for verdadeira (e não houver IA):
+   • agente_sebrae E empresario_ou_funcionario (2+ pessoas), OU
+   • agente_sebrae E fachada (agente sozinho mas com fachada/marca/logo da empresa visível), OU
+   • agente_sebrae E interior (agente sozinho mas dentro de um ambiente comercial: balcão, prateleiras, produtos, equipamentos, oficina, escritório etc.).
+   Compatibilidade de segmento NÃO afeta a aprovação — uma foto pode ser aprovada mesmo que o segmento ao fundo não case 100%.
+
+C) INCONSISTENTE só quando: o agente não aparece, OU aparece sozinho em fundo vazio/neutro (parede lisa, paisagem, carro, rua sem identificação) sem fachada nem interior comercial.
 
 Critérios booleanos (true/false):
-1 fachada: fachada, marca ou logotipo do estabelecimento visível.
-2 agente_sebrae: aparece o consultor/agente Sebrae (visitante externo). Em foto com 2+ pessoas, assuma que uma delas é o agente, a menos que claramente sejam apenas clientes/transeuntes.
-3 empresario_ou_funcionario: **REGRA SIMPLES — se há 2 ou mais pessoas na imagem, marque true.** Vale para qualquer segunda pessoa: ao lado, atrás, à frente, ao fundo, parcialmente visível, de perfil, desfocada, segurando material Sebrae, com avental/jaleco/uniforme, atrás do balcão, ou simplesmente posando junto. Só marque false se houver APENAS UMA pessoa (o agente sozinho) ou nenhuma pessoa na foto. Na dúvida, marque true.
-4 interior: ambiente comercial interno (produtos, balcão, escritório, oficina, equipamentos).
-5 fundo_valido: rejeite parede lisa/branca, fundo neutro ou sem contexto comercial.
-6 contexto_segmento: imagem compatível com o segmento informado.
-7 gerada_por_ia: indícios de imagem gerada/editada por IA — mãos/dedos deformados, texto ilegível em placas/produtos, simetria antinatural, iluminação inconsistente, fundo "plástico", olhos/orelhas assimétricos, repetição de padrões. Seja conservador: marque true só com indícios claros.
+1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
+2 agente_sebrae: aparece o consultor/agente Sebrae. Em foto com 2+ pessoas, assuma que uma delas é o agente.
+3 empresario_ou_funcionario: TRUE sempre que houver 2+ pessoas na foto (ver regra A). FALSE apenas quando há UMA única pessoa (o agente) ou nenhuma pessoa.
+4 interior: ambiente comercial interno (produtos, balcão, prateleiras, escritório, oficina, equipamentos, vitrines internas).
+5 fundo_valido: TRUE se há contexto comercial (interior ou fachada) OU se há 2+ pessoas. FALSE só para fundo totalmente neutro (parede lisa, céu, paisagem sem estabelecimento) com apenas o agente.
+6 contexto_segmento: TRUE se a cena é plausivelmente compatível com o segmento. Seja generoso — só FALSE em clara incompatibilidade.
+7 gerada_por_ia: indícios claros de IA generativa (mãos deformadas, texto ilegível, simetria artificial, fundo "plástico"). Conservador.
 
-Aprovada = (agente_sebrae E empresario_ou_funcionario) E NÃO gerada_por_ia.
+Aprovada = (regra B acima) E NÃO gerada_por_ia.
 
 Responda APENAS JSON válido:
 {
