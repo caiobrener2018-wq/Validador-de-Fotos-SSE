@@ -304,7 +304,9 @@ const Index = () => {
           companyName: agent.companyName,
           segment: agent.segment,
           agentName: agent.name,
+          referenceUrls: pickReferences(agent.name, photo.url),
         }, worker.model, shouldStop, waitIfPaused, (ms) => onRateLimit(worker, ms), worker.pacer);
+
         worker.stableCompletions++;
         if (worker.stableCompletions >= 30 && worker.currentConcurrency < MAX_CONCURRENCY_PER_WORKER) {
           worker.currentConcurrency++;
