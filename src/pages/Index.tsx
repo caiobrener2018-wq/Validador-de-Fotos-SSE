@@ -34,11 +34,18 @@ const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
 async function analyzeOnce(
-  photo: { url: string; companyName: string; segment: string; agentName: string },
+  photo: { url: string; companyName: string; segment: string; agentName: string; referenceUrls?: string[] },
   model: string,
 ): Promise<any> {
   const { data } = await supabase.functions.invoke('analyze-photo', {
-    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, agentName: photo.agentName, model },
+    body: {
+      imageUrl: photo.url,
+      companyName: photo.companyName,
+      segment: photo.segment,
+      agentName: photo.agentName,
+      referenceUrls: photo.referenceUrls,
+      model,
+    },
   });
   if (data?.ok === false && data.error === 'rate_limit') {
     const err: any = new Error('rate_limit');
@@ -53,6 +60,7 @@ async function analyzeOnce(
   const { ok, ...result } = data || {};
   return result;
 }
+
 
 async function analyzeWithRetry(
   photo: { url: string; companyName: string; segment: string; agentName: string },
