@@ -69,23 +69,31 @@ Use essas informações para verificar se o conteúdo visual é compatível com 
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
 
-IDENTIFICAÇÃO DO AGENTE SEBRAE:
-O agente Sebrae normalmente usa CAMISA GOLA POLO BRANCA e/ou CRACHÁ pendurado no pescoço. Se houver alguém na foto com essas características, MUITO provavelmente é o agente. Use isso como pista principal para marcar \`agente_sebrae\` = true. Se ninguém na foto tem polo branca/crachá e não há outro indicativo claro de um consultor visitante, \`agente_sebrae\` pode ser false.
+IDENTIFICAÇÃO DO AGENTE SEBRAE (LEIA COM ATENÇÃO):
+O agente Sebrae normalmente usa CAMISA GOLA POLO BRANCA e/ou CRACHÁ pendurado no pescoço. Use isso como pista principal.
+
+PORÉM — pistas visuais podem estar OCULTAS: o agente pode estar de agasalho/jaqueta por cima da polo, de costas, em selfie de perto, em ambiente frio, etc. Nesses casos polo/crachá NÃO ficam visíveis.
+
+POR ISSO, quando houver FOTOS DE REFERÊNCIA (outras fotos enviadas pelo MESMO agente, neste mesmo lote), você DEVE comparar o ROSTO das pessoas:
+   • Se o rosto/feições de alguém na FOTO PRINCIPAL aparece TAMBÉM em alguma foto de referência (a mesma pessoa entre as fotos), essa pessoa É o agente Sebrae, mesmo que NÃO esteja com polo branca/crachá visível na foto atual. Marque \`agente_sebrae\` = true.
+   • Compare cabelo, formato de rosto, óculos, barba, traços faciais. Roupas mudam — rosto não.
+   • Nas fotos de referência, o agente costuma aparecer com polo branca/crachá em pelo menos uma — use essa para "aprender" o rosto e depois reconhecê-lo nas demais.
+   • Se NÃO houver fotos de referência ou nenhum rosto recorrente, caia para a pista visual padrão (polo branca/crachá ou consultor visitante claramente).
 
 REGRAS DE OURO (siga nesta ordem, sem exceção):
 
-A) IDENTIFIQUE O AGENTE E CONTE AS PESSOAS. Procure pessoa com polo branca e/ou crachá. Conte os rostos/corpos visíveis na foto (centro, bordas, fundo).
-   • \`agente_sebrae\` = true SOMENTE se houver alguém com características de agente (polo branca, crachá) ou claramente um consultor visitando.
-   • \`empresario_ou_funcionario\` = true SOMENTE quando houver 2+ pessoas E uma delas for o agente (agente + outra pessoa). Ter 2 pessoas sem agente identificado NÃO conta. Ter apenas o agente sozinho NÃO conta.
+A) IDENTIFIQUE O AGENTE E CONTE AS PESSOAS na FOTO PRINCIPAL (ignore as referências para contagem).
+   • \`agente_sebrae\` = true se: (i) alguém tem polo branca/crachá visível, OU (ii) o rosto de alguém coincide com o rosto recorrente das fotos de referência, OU (iii) claramente é um consultor visitante.
+   • \`empresario_ou_funcionario\` = true SOMENTE quando houver 2+ pessoas na foto principal E uma delas for o agente. Ter 2 pessoas sem agente identificado NÃO conta. Ter apenas o agente sozinho NÃO conta.
 
 B) APROVAÇÃO. Marque \`aprovada\` = true se QUALQUER uma destas condições for verdadeira (e não houver IA):
-   • agente_sebrae E empresario_ou_funcionario (agente + outra pessoa), OU
-   • agente_sebrae E fachada (agente com fachada/marca/logo visível), OU
-   • agente_sebrae E interior (agente em ambiente comercial: balcão, prateleiras, produtos, oficina, escritório), OU
-   • agente_sebrae E fundo_valido (agente em qualquer fundo que NÃO seja parede totalmente lisa/vazia — rua, ambiente externo genérico, espaço com móveis/objetos quaisquer já vale).
+   • agente_sebrae E empresario_ou_funcionario, OU
+   • agente_sebrae E fachada, OU
+   • agente_sebrae E interior, OU
+   • agente_sebrae E fundo_valido (qualquer fundo que NÃO seja parede totalmente lisa/vazia).
    Compatibilidade de segmento NÃO afeta a aprovação.
 
-C) INCONSISTENTE só quando: o agente não aparece na foto, OU o agente aparece sozinho contra um fundo COMPLETAMENTE VAZIO (apenas parede lisa, sem nenhum elemento). Fundo genérico sem fachada/elementos da empresa NÃO é problema — só rejeite se for parede 100% lisa e vazia.
+C) INCONSISTENTE só quando: o agente não aparece na foto principal, OU o agente aparece sozinho contra um fundo COMPLETAMENTE VAZIO (parede 100% lisa, sem nenhum elemento).
 
 Critérios booleanos (true/false):
 1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
@@ -164,22 +172,32 @@ function parseRetryAfterMs(text: string): number {
   return DEFAULT_RETRY_AFTER_MS;
 }
 
-async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, imageUrl: string) {
+async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, imageUrl: string, referenceUrls: string[] = []) {
   // GPT-5 family and newer reasoning models use max_completion_tokens instead of max_tokens
   const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model);
+  const userContent: any[] = [];
+  if (referenceUrls.length > 0) {
+    userContent.push({
+      type: "text",
+      text: `FOTOS DE REFERÊNCIA (${referenceUrls.length}) — outras fotos enviadas pelo MESMO agente neste lote. Use-as APENAS para reconhecer o ROSTO do agente. NÃO conte pessoas delas, NÃO use o cenário delas. Elas são só pista de identidade:`,
+    });
+    for (const u of referenceUrls) {
+      userContent.push({ type: "image_url", image_url: { url: u, detail: "low" } });
+    }
+  }
+  userContent.push({ type: "text", text: `FOTO PRINCIPAL — analise ESTA foto da empresa "${companyName || 'N/A'}". Conte pessoas e avalie o cenário SOMENTE dela:` });
+  userContent.push({ type: "image_url", image_url: { url: imageUrl, detail: "low" } });
+
   const body: Record<string, unknown> = {
     model,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user", content: [
-        { type: "text", text: `Analise esta foto da empresa "${companyName || 'N/A'}":` },
-        { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
-      ] },
+      { role: "user", content: userContent },
     ],
   };
   if (usesCompletionTokens) {
-    body.max_completion_tokens = 1000; // reasoning models consume tokens internally
+    body.max_completion_tokens = 1000;
   } else {
     body.max_tokens = 400;
   }
@@ -188,6 +206,7 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
     headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
 
   return {
     ok: response.ok,
@@ -209,7 +228,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { imageUrl, companyName, segment, agentName, model: requestedModel } = await req.json();
+    const { imageUrl, companyName, segment, agentName, model: requestedModel, referenceUrls } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
     const openaiKey = Deno.env.get("API_CHAT_RENATINHA");
@@ -217,6 +236,9 @@ serve(async (req) => {
 
     const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL;
     const systemPrompt = buildSystemPrompt(companyName || "", segment || "", agentName || "");
+    const refs: string[] = Array.isArray(referenceUrls)
+      ? referenceUrls.filter((u: unknown) => typeof u === "string" && u && u !== imageUrl).slice(0, 3)
+      : [];
 
     // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
     let bytes: Uint8Array;
@@ -231,10 +253,11 @@ serve(async (req) => {
     const imageHash = await sha256(bytes);
     const dataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
 
-    let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", imageUrl);
+    let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", imageUrl, refs);
     if (!response.ok && response.status === 400) {
-      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", dataUrl);
+      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", dataUrl, refs);
     }
+
 
     if (!response.ok) {
       console.error("OpenAI error:", model, response.status, response.text);

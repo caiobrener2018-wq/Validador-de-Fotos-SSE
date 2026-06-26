@@ -34,11 +34,18 @@ const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
 async function analyzeOnce(
-  photo: { url: string; companyName: string; segment: string; agentName: string },
+  photo: { url: string; companyName: string; segment: string; agentName: string; referenceUrls?: string[] },
   model: string,
 ): Promise<any> {
   const { data } = await supabase.functions.invoke('analyze-photo', {
-    body: { imageUrl: photo.url, companyName: photo.companyName, segment: photo.segment, agentName: photo.agentName, model },
+    body: {
+      imageUrl: photo.url,
+      companyName: photo.companyName,
+      segment: photo.segment,
+      agentName: photo.agentName,
+      referenceUrls: photo.referenceUrls,
+      model,
+    },
   });
   if (data?.ok === false && data.error === 'rate_limit') {
     const err: any = new Error('rate_limit');
@@ -54,9 +61,11 @@ async function analyzeOnce(
   return result;
 }
 
+
 async function analyzeWithRetry(
-  photo: { url: string; companyName: string; segment: string; agentName: string },
+  photo: { url: string; companyName: string; segment: string; agentName: string; referenceUrls?: string[] },
   model: string,
+
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
@@ -235,6 +244,30 @@ const Index = () => {
       }
     }));
 
+    // Pool de fotos por nome do agente — usado como referência facial.
+    // A IA compara o rosto do agente nas referências para identificá-lo na foto
+    // principal mesmo quando polo branca/crachá não estão visíveis.
+    const REF_POOL_LIMIT = 8; // sortear no máximo desse pool por análise
+    const agentPhotoPool = new Map<string, string[]>();
+    updated.forEach(a => {
+      const key = (a.name || '').trim().toLowerCase();
+      if (!key) return;
+      const arr = agentPhotoPool.get(key) ?? [];
+      for (const p of a.photos) {
+        if (!p.url) continue;
+        if (arr.includes(p.url)) continue;
+        arr.push(p.url);
+        if (arr.length >= REF_POOL_LIMIT) break;
+      }
+      agentPhotoPool.set(key, arr);
+    });
+    const pickReferences = (agentName: string, currentUrl: string): string[] => {
+      const pool = agentPhotoPool.get((agentName || '').trim().toLowerCase()) ?? [];
+      return pool.filter(u => u !== currentUrl).slice(0, 3);
+    };
+
+
+
 
     // Estado por worker (cada um = um modelo OpenAI com seu próprio RPM).
     type Worker = {
@@ -271,7 +304,9 @@ const Index = () => {
           companyName: agent.companyName,
           segment: agent.segment,
           agentName: agent.name,
+          referenceUrls: pickReferences(agent.name, photo.url),
         }, worker.model, shouldStop, waitIfPaused, (ms) => onRateLimit(worker, ms), worker.pacer);
+
         worker.stableCompletions++;
         if (worker.stableCompletions >= 30 && worker.currentConcurrency < MAX_CONCURRENCY_PER_WORKER) {
           worker.currentConcurrency++;
