@@ -23,27 +23,19 @@ export function getAgentStatus(agent: AgentData): AgentStatus {
 
   const donePhotos = photos.filter(p => p.status === 'done' && p.analysis);
 
-  // Regra principal: se QUALQUER foto mostra o agente acompanhado de uma
-  // segunda pessoa (empresário/funcionário), o atendimento é Aprovado —
-  // independente de fachada/interior, duplicatas em outras fotos ou IA.
+  // Aprovado se QUALQUER foto satisfizer uma das condições:
+  //   (a) agente + segunda pessoa (empresário/funcionário), OU
+  //   (b) agente + contexto corporativo da empresa (fachada OU interior).
   const anyApproved = donePhotos.some(p => {
     const c = p.analysis!.criterios;
-    return c.agente_sebrae && c.empresario_ou_funcionario;
+    if (!c.agente_sebrae) return false;
+    return c.empresario_ou_funcionario || c.fachada || c.interior;
   });
   if (anyApproved) return 'approved';
 
-  // Sem aprovação: sinalizações graves
+  // Sinalizações graves só prevalecem quando não houve aprovação
   if (photos.some(p => p.status === 'ai_generated')) return 'ai_generated';
   if (photos.some(p => p.status === 'duplicate')) return 'duplicate';
-
-  if (donePhotos.length === 0) return 'inconsistent';
-
-  // "Sem empresário": agente aparece no local, mas sem outra pessoa.
-  const anyAgentOnSite = donePhotos.some(p => {
-    const c = p.analysis!.criterios;
-    return c.agente_sebrae && (c.fachada || c.interior);
-  });
-  if (anyAgentOnSite) return 'no_business_person';
 
   return 'inconsistent';
 }
