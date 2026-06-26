@@ -63,8 +63,9 @@ async function analyzeOnce(
 
 
 async function analyzeWithRetry(
-  photo: { url: string; companyName: string; segment: string; agentName: string },
+  photo: { url: string; companyName: string; segment: string; agentName: string; referenceUrls?: string[] },
   model: string,
+
   shouldStop: () => boolean,
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
