@@ -29,7 +29,7 @@ const MIN_CONCURRENCY_PER_WORKER = 6;
 const INITIAL_CONCURRENCY_PER_WORKER = 20;
 const MAX_CONCURRENCY_PER_WORKER = 60;
 // Limita o índice perceptual para evitar lentidão O(n) crescente em lotes grandes.
-const PHASH_INDEX_MAX = 8000;
+
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
 
