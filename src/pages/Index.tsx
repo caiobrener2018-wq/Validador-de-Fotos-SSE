@@ -17,22 +17,22 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Três workers paralelos, cada um pacing ~480 RPM em um modelo diferente.
-// Combinado: até ~1440 RPM. Limites são por-modelo na OpenAI, então usar
-// modelos distintos permite somar os RPMs sem disparar 429.
+// Três workers paralelos, cada um pacing conservador em um modelo diferente.
+// Pacing reduzido + concorrência menor para evitar 429 (rate_limit) da OpenAI,
+// especialmente porque agora enviamos imagem principal em alta resolução +
+// referências em baixa resolução (mais tokens por chamada).
 const WORKERS = [
-  { model: 'gpt-4o-mini', rpm: 480 },
-  { model: 'gpt-4.1-mini', rpm: 480 },
-  { model: 'gpt-4.1-nano', rpm: 480 },
+  { model: 'gpt-4o-mini', rpm: 250 },
+  { model: 'gpt-4.1-mini', rpm: 250 },
+  { model: 'gpt-4.1-nano', rpm: 300 },
 ] as const;
-const MIN_CONCURRENCY_PER_WORKER = 6;
-const INITIAL_CONCURRENCY_PER_WORKER = 20;
-const MAX_CONCURRENCY_PER_WORKER = 60;
-// Limita o índice perceptual para evitar lentidão O(n) crescente em lotes grandes.
+const MIN_CONCURRENCY_PER_WORKER = 3;
+const INITIAL_CONCURRENCY_PER_WORKER = 8;
+const MAX_CONCURRENCY_PER_WORKER = 24;
 
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
-const MAX_AGENT_REFERENCE_IMAGES = 6;
+const MAX_AGENT_REFERENCE_IMAGES = 4;
 
 async function analyzeOnce(
   photo: { url: string; companyName: string; segment: string; agentName: string; referenceUrls?: string[] },
@@ -71,7 +71,7 @@ async function analyzeWithRetry(
   waitIfPaused: () => Promise<void>,
   onRateLimit: (retryAfterMs: number) => void,
   waitForStartSlot: () => Promise<void>,
-  maxRetries = 8
+  maxRetries = 12
 ): Promise<any> {
   const controlledDelay = async (ms: number) => {
     let remaining = ms;
@@ -294,7 +294,7 @@ const Index = () => {
     }));
 
     const onRateLimit = (worker: Worker, retryAfterMs: number) => {
-      worker.currentConcurrency = Math.max(MIN_CONCURRENCY_PER_WORKER, Math.floor(worker.currentConcurrency * 0.65));
+      worker.currentConcurrency = Math.max(MIN_CONCURRENCY_PER_WORKER, Math.floor(worker.currentConcurrency * 0.5));
       worker.stableCompletions = 0;
       console.info(`OpenAI rate limit (${worker.model}): reduzindo paralelismo para ${worker.currentConcurrency}. Retry em ${retryAfterMs}ms.`);
     };
