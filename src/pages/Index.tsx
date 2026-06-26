@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
-import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X, Loader2, Copy } from 'lucide-react';
+import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
 // Três workers paralelos, cada um pacing ~480 RPM em um modelo diferente.
 // Combinado: até ~1440 RPM. Limites são por-modelo na OpenAI, então usar
