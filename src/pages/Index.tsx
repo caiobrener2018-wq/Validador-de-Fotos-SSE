@@ -289,8 +289,9 @@ const Index = () => {
           let dupRef: DupRef | null = null;
           if (hash) {
             const existing = hashMap.get(hash);
-            // só conta como duplicata se for de OUTRA foto (outro agente/photoIdx)
-            if (existing && !(existing.agentIdx === task.agentIdx && existing.photoIdx === task.photoIdx)) {
+            // só conta como duplicata se for de OUTRO atendimento (outro agentIdx).
+            // Fotos repetidas dentro do MESMO atendimento são ignoradas.
+            if (existing && existing.agentIdx !== task.agentIdx) {
               dupRef = existing;
             } else if (!existing) {
               hashMap.set(hash, {
