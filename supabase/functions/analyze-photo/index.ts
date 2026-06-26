@@ -199,14 +199,15 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
   if (referenceUrls.length > 0) {
     userContent.push({
       type: "text",
-      text: `FOTOS DE REFERÊNCIA (${referenceUrls.length}) — amostras de ATENDIMENTOS DIFERENTES do MESMO nome de agente: "${agentName || 'N/A'}". A pessoa que se repete nessas imagens é o agente. Use-as APENAS para reconhecer essa pessoa/rosto; NÃO conte pessoas delas e NÃO use o cenário delas:`,
+      text: `FOTOS DE REFERÊNCIA (${referenceUrls.length}) — amostras de ATENDIMENTOS DIFERENTES do MESMO nome de agente: "${agentName || 'N/A'}". A pessoa que se repete entre elas é o agente. Construa um PERFIL FÍSICO desta pessoa (gênero, tom de pele, cabelo, óculos, barba, porte, traços marcantes) e use esse perfil para encontrá-la na foto principal — não dependa de polo/crachá. NÃO conte pessoas e NÃO use o cenário das referências.`,
     });
     for (const u of referenceUrls) {
-      userContent.push({ type: "image_url", image_url: { url: u, detail: "high" } });
+      userContent.push({ type: "image_url", image_url: { url: u, detail: "low" } });
     }
   }
-  userContent.push({ type: "text", text: `FOTO PRINCIPAL — analise ESTA foto da empresa "${companyName || 'N/A'}". Conte pessoas e avalie o cenário SOMENTE dela:` });
+  userContent.push({ type: "text", text: `FOTO PRINCIPAL — analise ESTA foto da empresa "${companyName || 'N/A'}". Conte pessoas e avalie o cenário SOMENTE dela. Procure nela o perfil físico do agente identificado nas referências:` });
   userContent.push({ type: "image_url", image_url: { url: imageUrl, detail: "high" } });
+
 
   const body: Record<string, unknown> = {
     model,
