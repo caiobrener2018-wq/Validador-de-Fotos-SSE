@@ -23,14 +23,12 @@ export function getAgentStatus(agent: AgentData): AgentStatus {
 
   const donePhotos = photos.filter(p => p.status === 'done' && p.analysis);
 
-  // Regra principal: se QUALQUER foto mostra o agente acompanhado de um
-  // empresário/funcionário num contexto válido (frente ou interior da empresa),
-  // o atendimento é Aprovado — mesmo que outras fotos sejam ruins, duplicadas
-  // ou marcadas como IA.
+  // Regra principal: se QUALQUER foto mostra o agente acompanhado de uma
+  // segunda pessoa (empresário/funcionário), o atendimento é Aprovado —
+  // independente de fachada/interior, duplicatas em outras fotos ou IA.
   const anyApproved = donePhotos.some(p => {
     const c = p.analysis!.criterios;
-    const validContext = c.fachada || c.interior;
-    return c.agente_sebrae && c.empresario_ou_funcionario && validContext;
+    return c.agente_sebrae && c.empresario_ou_funcionario;
   });
   if (anyApproved) return 'approved';
 
