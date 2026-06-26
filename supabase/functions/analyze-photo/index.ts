@@ -184,7 +184,7 @@ function parseRetryAfterMs(text: string): number {
   return DEFAULT_RETRY_AFTER_MS;
 }
 
-async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, imageUrl: string, referenceUrls: string[] = []) {
+async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, agentName: string, imageUrl: string, referenceUrls: string[] = []) {
   // GPT-5 family and newer reasoning models use max_completion_tokens instead of max_tokens
   const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model);
   const userContent: any[] = [];
@@ -265,9 +265,9 @@ serve(async (req) => {
     const imageHash = await sha256(bytes);
     const dataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
 
-    let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", imageUrl, refs);
+    let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", agentName || "", imageUrl, refs);
     if (!response.ok && response.status === 400) {
-      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", dataUrl, refs);
+      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", agentName || "", dataUrl, refs);
     }
 
 
