@@ -172,22 +172,32 @@ function parseRetryAfterMs(text: string): number {
   return DEFAULT_RETRY_AFTER_MS;
 }
 
-async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, imageUrl: string) {
+async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, imageUrl: string, referenceUrls: string[] = []) {
   // GPT-5 family and newer reasoning models use max_completion_tokens instead of max_tokens
   const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model);
+  const userContent: any[] = [];
+  if (referenceUrls.length > 0) {
+    userContent.push({
+      type: "text",
+      text: `FOTOS DE REFERÊNCIA (${referenceUrls.length}) — outras fotos enviadas pelo MESMO agente neste lote. Use-as APENAS para reconhecer o ROSTO do agente. NÃO conte pessoas delas, NÃO use o cenário delas. Elas são só pista de identidade:`,
+    });
+    for (const u of referenceUrls) {
+      userContent.push({ type: "image_url", image_url: { url: u, detail: "low" } });
+    }
+  }
+  userContent.push({ type: "text", text: `FOTO PRINCIPAL — analise ESTA foto da empresa "${companyName || 'N/A'}". Conte pessoas e avalie o cenário SOMENTE dela:` });
+  userContent.push({ type: "image_url", image_url: { url: imageUrl, detail: "low" } });
+
   const body: Record<string, unknown> = {
     model,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user", content: [
-        { type: "text", text: `Analise esta foto da empresa "${companyName || 'N/A'}":` },
-        { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
-      ] },
+      { role: "user", content: userContent },
     ],
   };
   if (usesCompletionTokens) {
-    body.max_completion_tokens = 1000; // reasoning models consume tokens internally
+    body.max_completion_tokens = 1000;
   } else {
     body.max_tokens = 400;
   }
@@ -196,6 +206,7 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
     headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
 
   return {
     ok: response.ok,
