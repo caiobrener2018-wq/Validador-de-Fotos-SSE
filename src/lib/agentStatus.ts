@@ -29,7 +29,7 @@ export function getAgentStatus(agent: AgentData): AgentStatus {
   const anyApproved = donePhotos.some(p => {
     const c = p.analysis!.criterios;
     if (!c.agente_sebrae) return false;
-    return c.empresario_ou_funcionario || c.fachada || c.interior;
+    return c.empresario_ou_funcionario || c.fachada || c.interior || c.fundo_valido;
   });
   if (anyApproved) return 'approved';
 
