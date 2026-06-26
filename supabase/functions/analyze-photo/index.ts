@@ -228,7 +228,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { imageUrl, companyName, segment, agentName, model: requestedModel } = await req.json();
+    const { imageUrl, companyName, segment, agentName, model: requestedModel, referenceUrls } = await req.json();
     if (!imageUrl) return respond(false, { error: "imageUrl is required" });
 
     const openaiKey = Deno.env.get("API_CHAT_RENATINHA");
@@ -236,6 +236,9 @@ serve(async (req) => {
 
     const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL;
     const systemPrompt = buildSystemPrompt(companyName || "", segment || "", agentName || "");
+    const refs: string[] = Array.isArray(referenceUrls)
+      ? referenceUrls.filter((u: unknown) => typeof u === "string" && u && u !== imageUrl).slice(0, 3)
+      : [];
 
     // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
     let bytes: Uint8Array;
@@ -250,10 +253,11 @@ serve(async (req) => {
     const imageHash = await sha256(bytes);
     const dataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
 
-    let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", imageUrl);
+    let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", imageUrl, refs);
     if (!response.ok && response.status === 400) {
-      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", dataUrl);
+      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", dataUrl, refs);
     }
+
 
     if (!response.ok) {
       console.error("OpenAI error:", model, response.status, response.text);
