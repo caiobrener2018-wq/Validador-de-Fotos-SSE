@@ -273,7 +273,16 @@ serve(async (req) => {
 
     let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", agentName || "", imageUrl, refs);
     if (!response.ok && response.status === 400) {
-      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", agentName || "", dataUrl, refs);
+      const base64Refs: string[] = [];
+      for (const ref of refs) {
+        try {
+          const fetched = await fetchImageBytes(ref);
+          base64Refs.push(`data:${fetched.mimeType};base64,${toBase64(fetched.bytes)}`);
+        } catch (e) {
+          console.warn("Falha ao baixar referência para base64:", ref);
+        }
+      }
+      response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", agentName || "", dataUrl, base64Refs);
     }
 
 
