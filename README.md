@@ -1,3 +1,3 @@
 # Welcome to your Lovable project
 
-TODO: Atualiar lovable
+TODO: Atualizar lovable
