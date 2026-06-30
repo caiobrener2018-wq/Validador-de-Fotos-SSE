@@ -67,67 +67,52 @@ function buildSystemPrompt(companyName: string, segment: string, agentName: stri
 
   return `Valide foto de visita do programa "Sebrae na Sua Empresa".
 
-IDENTIFICAÇÃO DO AGENTE SEBRAE — REGRA PRINCIPAL (LEIA COM ATENÇÃO):
+PRIMEIRO PASSO OBRIGATÓRIO — CONTE ROSTOS E PESSOAS:
+Antes de qualquer outra análise, escaneie a imagem INTEIRA em busca de TODOS os rostos e corpos humanos visíveis.
+Olhe especialmente:
+  - Primeiro plano (quem está mais perto da câmera)
+  - Segundo plano / fundo (pessoas atrás, parcialmente visíveis)
+  - Bordas e cantos da foto (pessoas cortadas pela câmera — um ombro, metade do rosto, um braço)
+  - Reflexos em espelhos ou vidros
+  - Selfies: quem segura a câmera É uma pessoa + quem aparece ao lado/atrás É outra pessoa
+Registre o total em \`num_pessoas\`. Este é o campo MAIS IMPORTANTE da sua resposta.
+
+IDENTIFICAÇÃO DO AGENTE SEBRAE:
 Polo branca e crachá NÃO são critérios-chave. O agente pode aparecer com agasalho, jaqueta, de lado, de costas, em selfie ou com a roupa parcialmente coberta. NÃO descarte alguém por não estar com polo branca.
 
 Quando houver FOTOS DE REFERÊNCIA, elas são amostras de ATENDIMENTOS DIFERENTES enviadas pelo MESMO nome de agente: "${agentName || 'Não informado'}". A pessoa que se repete entre essas referências é, por definição, o agente Sebrae daquele nome.
 
-PROCESSO OBRIGATÓRIO de identificação por características físicas (não só rosto):
+PROCESSO de identificação por características físicas:
 
 Passo 1 — Construa um PERFIL FÍSICO do agente a partir das referências:
-  • Gênero aparente (homem / mulher / não-definido)
-  • Faixa etária aparente (jovem / adulto / sênior)
-  • Tom/cor da pele (clara / parda / negra / etc.)
-  • Cabelo: comprimento (curto, médio, longo), cor, textura (liso, ondulado, cacheado, careca, raspado), barba/bigode
-  • Formato do rosto, traços marcantes (nariz, queixo, sobrancelhas)
-  • Uso de óculos (e estilo, se possível)
-  • Compleição/porte físico (magro, médio, robusto, alto, baixo)
-  • Quaisquer marcas pessoais (tatuagens visíveis, brincos, piercings, acessórios recorrentes)
-  Identifique qual pessoa SE REPETE nas referências (cenários e empresas diferentes, mesma pessoa) — ESSA é o agente.
+  • Gênero aparente, faixa etária, tom/cor da pele
+  • Cabelo: comprimento, cor, textura, barba/bigode
+  • Uso de óculos (e estilo)
+  • Compleição/porte físico
+  Identifique qual pessoa SE REPETE nas referências — ESSA é o agente.
 
 Passo 2 — Procure esse PERFIL na FOTO PRINCIPAL:
-  • Compare as características físicas, NÃO apenas o rosto. O ângulo e a roupa podem mudar; o gênero, tom de pele, cabelo, óculos, porte e traços faciais não mudam.
-  • Se alguém na foto principal combina com o perfil em pelo menos 3 dessas características fortes (ex.: mesmo gênero + mesmo tom de pele + mesmo cabelo + mesmos óculos), marque \`agente_sebrae\` = true MESMO sem polo branca, sem crachá, de máscara, com agasalho ou em ângulo diferente.
+  • Compare características físicas. Se alguém combina com o perfil em pelo menos 3 características fortes, marque \`agente_sebrae\` = true.
   • Se a foto for selfie/close, dê peso máximo a: rosto, cabelo, óculos, barba, tom de pele.
 
-Passo 3 — Fallback (sem referências úteis): use bom senso visual. Qualquer pessoa que pareça um visitante/consultor do atendimento (postura de atendimento, crachá ou uniforme visível, ou claramente quem está conduzindo a visita) conta como agente.
+Passo 3 — Fallback (sem referências úteis): use bom senso visual. Qualquer pessoa que pareça um visitante/consultor conta como agente.
 
 REGRAS DE OURO:
 
-A) CONTAGEM DE PESSOAS — REGRA MAIS IMPORTANTE PARA APROVAÇÃO:
-   Conte TODAS as pessoas visíveis na FOTO PRINCIPAL (ignore as referências para contagem).
-   Preencha o campo \`num_pessoas\` com o número total de pessoas na foto.
-   • Se a foto é uma SELFIE: quem está tirando a selfie TAMBÉM conta como pessoa. Se aparece alguém além de quem tira a selfie, são no mínimo 2 pessoas.
-   • \`agente_sebrae\` = true conforme processo acima.
-   • \`empresario_ou_funcionario\` = true se houver 2 OU MAIS PESSOAS visíveis na foto (\`num_pessoas\` >= 2).
-     ATENÇÃO: Você não precisa ter identificado o agente com sucesso para marcar \`empresario_ou_funcionario\` = true. Se há 2 pessoas na foto e você não sabe quem é o agente, AINDA ASSIM \`empresario_ou_funcionario\` = true.
+A) \`empresario_ou_funcionario\` = true se \`num_pessoas\` >= 2. É SÓ ISSO.
+   NÃO importa se você identificou o agente ou não.
+   NÃO importa quem são as outras pessoas.
+   NÃO classifique ninguém como "cliente", "consumidor" ou "visitante".
+   Se há 2+ seres humanos visíveis na foto → empresario_ou_funcionario = true.
 
-   VARREDURA MINUCIOSA OBRIGATÓRIA: Você tem falhado em contar pessoas. Antes de responder "é a única na cena", olhe atentamente para:
-   - O fundo da imagem, atrás da pessoa em primeiro plano.
-   - Os cantos e bordas da foto (pessoas cortadas, apenas um braço, ombro ou metade do rosto).
-   - Reflexos em espelhos ou vidros.
-   Se houver qualquer indício visual de uma segunda pessoa, num_pessoas >= 2.
+B) APROVAÇÃO. \`aprovada\` = true se: agente_sebrae E empresario_ou_funcionario. Segmento NÃO afeta.
 
-   ATENÇÃO — REGRA CRÍTICA: NÃO classifique outras pessoas como "cliente", "consumidor", "visitante" ou "transeunte".
-   No contexto do programa Sebrae na Sua Empresa, QUALQUER pessoa que apareça na foto além da pessoa principal é considerada o EMPRESÁRIO ou FUNCIONÁRIO da empresa visitada. Não importa a aparência, idade, roupa ou posição na foto.
-
-EXEMPLOS COMUNS:
-   • Selfie do agente com outra pessoa ao lado → num_pessoas=2, empresario_ou_funcionario=true
-   • Agente e empresário atrás do balcão → num_pessoas=2, empresario_ou_funcionario=true
-   • Foto em grupo com 3+ pessoas incluindo o agente → num_pessoas=3+, empresario_ou_funcionario=true
-   • Agente e uma pessoa ao fundo da loja → num_pessoas=2, empresario_ou_funcionario=true (NÃO chame de "cliente")
-   • Agente sozinho na foto → num_pessoas=1, empresario_ou_funcionario=false
-
-B) APROVAÇÃO. Marque \`aprovada\` = true se (e somente se):
-   • agente_sebrae E empresario_ou_funcionario.
-   Compatibilidade de segmento NÃO afeta a aprovação.
-
-C) INCONSISTENTE só quando: o agente não aparece na foto principal, OU o agente aparece sozinho contra um fundo COMPLETAMENTE VAZIO (parede 100% lisa, sem nenhum elemento).
+C) INCONSISTENTE: só quando o agente não aparece na foto, OU aparece sozinho contra fundo 100% vazio.
 
 Critérios booleanos:
-1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
-2 agente_sebrae: pessoa que bate com o perfil físico recorrente das referências, ou claramente consultor/visitante. NÃO depende de polo branca.
-3 empresario_ou_funcionario: TRUE se há 2 ou mais pessoas na foto. Independe de o agente ter sido identificado. Qualquer pessoa extra = empresário. NÃO use "cliente".
+1 fachada: fachada, marca, logo, placa, vitrine ou letreiro visível.
+2 agente_sebrae: pessoa que bate com o perfil físico das referências. NÃO depende de polo branca.
+3 empresario_ou_funcionario: TRUE se num_pessoas >= 2. Simples assim.
 4 interior: ambiente comercial interno.
 5 fundo_valido: TRUE para QUALQUER fundo que não seja parede 100% lisa.
 6 contexto_segmento: seja generoso.
@@ -146,10 +131,26 @@ Responda APENAS JSON válido:
     "contexto_segmento": true,
     "gerada_por_ia": false
   },
-  "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras): tipo de local, NÚMERO DE PESSOAS, características físicas de quem parece o agente, 2-3 objetos marcantes, iluminação.",
-  "justificativa": "1-2 frases: quantas pessoas (use o número exato), qual o perfil físico recorrente do agente nas referências (gênero, pele, cabelo, óculos, porte) e como você o localizou na foto principal, e qual condição de aprovação foi atendida."
+  "scene_signature": "Descrição da cena em 1 frase (~25 palavras): tipo de local, NÚMERO EXATO DE PESSOAS, características do agente, 2-3 objetos marcantes.",
+  "justificativa": "1-2 frases: NÚMERO EXATO de pessoas encontradas (ex: 'Encontrei 2 pessoas'), perfil do agente e condição de aprovação."
 }${contextInfo}`;
 }
+
+const PEOPLE_COUNT_PROMPT = `Você é um detector de pessoas em fotografias. Sua ÚNICA tarefa é contar quantas PESSOAS HUMANAS aparecem nesta foto.
+
+Instruções:
+1. Escaneie TODA a imagem pixel a pixel: primeiro plano, segundo plano, fundo, cantos, bordas.
+2. Conte TODOS os seres humanos visíveis, incluindo:
+   - Pessoas em primeiro plano (close, selfie)
+   - Pessoas ao fundo ou parcialmente visíveis
+   - Pessoas cortadas pela borda da foto (apenas ombro, braço, metade do rosto)
+   - Rostos refletidos em espelhos ou vidros
+   - A pessoa tirando a selfie (se for selfie, ela conta)
+3. Na dúvida se é uma pessoa, CONTE como pessoa.
+4. NÃO analise nada além de contagem de pessoas. Ignore objetos, cenário, identificação.
+
+Responda APENAS com JSON:
+{"num_pessoas": <número inteiro>, "descricao_pessoas": "Descreva brevemente a localização de cada pessoa na foto (ex: 'Pessoa 1: primeiro plano esquerdo, Pessoa 2: fundo direito')"}`;
 
 const EMPTY_CRITERIA = {
   fachada: false,
@@ -284,7 +285,7 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
   if (usesCompletionTokens) {
     body.max_completion_tokens = 1000;
   } else {
-    body.max_tokens = 400;
+    body.max_tokens = 600;
   }
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -306,6 +307,43 @@ function extractOpenAIContent(text: string): string {
     return data.choices?.[0]?.message?.content || "";
   } catch {
     return "";
+  }
+}
+
+async function callPeopleCount(openaiKey: string, model: string, imageUrl: string) {
+  const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model);
+  const body: Record<string, unknown> = {
+    model,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: PEOPLE_COUNT_PROMPT },
+      { role: "user", content: [
+        { type: "text", text: "Conte TODAS as pessoas humanas visíveis nesta foto. Escaneie cada canto, borda e fundo." },
+        { type: "image_url", image_url: { url: imageUrl, detail: "high" } },
+      ] },
+    ],
+  };
+  if (usesCompletionTokens) {
+    body.max_completion_tokens = 300;
+  } else {
+    body.max_tokens = 200;
+  }
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) return 0;
+  const text = await response.text().catch(() => "");
+  try {
+    const data = JSON.parse(text);
+    const content = data.choices?.[0]?.message?.content || "";
+    const parsed = JSON.parse(content);
+    return typeof parsed.num_pessoas === "number" ? parsed.num_pessoas : 0;
+  } catch {
+    // Tenta extrair número do texto
+    const m = text.match(/"num_pessoas"\s*:\s*(\d+)/);
+    return m ? Number(m[1]) : 0;
   }
 }
 
@@ -366,7 +404,33 @@ serve(async (req) => {
       return respond(false, { error: "ai_error", message: `OpenAI ${response.status}`, model });
     }
     const content = extractOpenAIContent(response.text);
-    return respond(true, { ...parseJson(content), imageHash, model });
+    let result = parseJson(content);
+
+    // SEGUNDA VERIFICAÇÃO: Se a primeira análise diz que há apenas 1 pessoa,
+    // faz uma segunda chamada focada EXCLUSIVAMENTE em contar pessoas/rostos.
+    if (!result.criterios.empresario_ou_funcionario) {
+      console.log("[Re-scan] Primeira análise encontrou < 2 pessoas. Executando segunda verificação focada em contagem...");
+      try {
+        // Tenta com a URL original, senão com base64
+        let recount = await callPeopleCount(openaiKey, model, imageUrl);
+        if (recount === 0) {
+          recount = await callPeopleCount(openaiKey, model, dataUrl);
+        }
+        console.log(`[Re-scan] Segunda verificação encontrou ${recount} pessoa(s).`);
+        if (recount >= 2) {
+          result.criterios.empresario_ou_funcionario = true;
+          // Recalcular aprovação
+          result.aprovada = result.criterios.agente_sebrae
+            && result.criterios.empresario_ou_funcionario
+            && !result.criterios.gerada_por_ia;
+          result.justificativa += ` [Re-scan: ${recount} pessoas detectadas na segunda verificação]`;
+        }
+      } catch (e) {
+        console.warn("[Re-scan] Falha na segunda verificação:", e);
+      }
+    }
+
+    return respond(true, { ...result, imageHash, model });
   } catch (e) {
     console.error("Error:", e);
     return respond(false, { error: "unknown", message: e instanceof Error ? e.message : "Erro desconhecido" });
