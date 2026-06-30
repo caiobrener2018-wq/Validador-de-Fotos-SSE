@@ -209,7 +209,11 @@ function buildJustification(agent: AgentData, status: AgentStatus): string {
     const reasons = agent.photos
       .map((p, i) => {
         if (p.status === 'error') return `Foto ${i + 1}: ${p.error || 'erro na análise'}`;
-        if (p.analysis && !p.analysis.aprovada) return `Foto ${i + 1}: ${p.analysis.justificativa}`;
+        if (p.analysis) {
+          const c = p.analysis.criterios;
+          const isApproved = c.agente_sebrae && c.empresario_ou_funcionario && !c.gerada_por_ia;
+          if (!isApproved) return `Foto ${i + 1}: ${p.analysis.justificativa}`;
+        }
         return '';
       })
       .filter(Boolean)

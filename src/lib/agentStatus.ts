@@ -23,22 +23,21 @@ export function getAgentStatus(agent: AgentData): AgentStatus {
 
   const donePhotos = photos.filter(p => p.status === 'done' && p.analysis);
 
-  // Aprovado se QUALQUER foto satisfizer uma das condições:
-  //   (a) agente + segunda pessoa (empresário/funcionário), OU
-  //   (b) agente + contexto corporativo/fundo não vazio.
-  // Também respeita `analysis.aprovada`, porque a Edge Function já normaliza
-  // contradições do modelo (ex.: justificativa diz que aprovou, mas algum boolean veio errado).
+  // Aprovado APENAS se tiver agente E empresário/funcionário (e não for IA)
   const anyApproved = donePhotos.some(p => {
-    if (p.analysis!.aprovada) return true;
     const c = p.analysis!.criterios;
-    if (!c.agente_sebrae) return false;
-    return c.empresario_ou_funcionario || c.fachada || c.interior || c.fundo_valido;
+    return c.agente_sebrae && c.empresario_ou_funcionario;
   });
   if (anyApproved) return 'approved';
 
   // Sinalizações graves só prevalecem quando não houve aprovação
   if (photos.some(p => p.status === 'ai_generated')) return 'ai_generated';
   if (photos.some(p => p.status === 'duplicate')) return 'duplicate';
+
+  // Se o agente está na foto mas não tem empresário, marca como no_business_person
+  if (donePhotos.some(p => p.analysis!.criterios.agente_sebrae && !p.analysis!.criterios.empresario_ou_funcionario)) {
+    return 'no_business_person';
+  }
 
   return 'inconsistent';
 }

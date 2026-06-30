@@ -98,11 +98,8 @@ A) IDENTIFIQUE O AGENTE E CONTE PESSOAS na FOTO PRINCIPAL (ignore as referência
    • \`agente_sebrae\` = true conforme processo acima.
    • \`empresario_ou_funcionario\` = true SOMENTE quando há 2+ pessoas na foto principal E uma delas é o agente. 2 pessoas sem agente NÃO conta. Apenas o agente sozinho NÃO conta.
 
-B) APROVAÇÃO. Marque \`aprovada\` = true se QUALQUER uma destas for verdadeira (e não houver IA):
-   • agente_sebrae E empresario_ou_funcionario, OU
-   • agente_sebrae E fachada, OU
-   • agente_sebrae E interior, OU
-   • agente_sebrae E fundo_valido (qualquer fundo que NÃO seja parede totalmente lisa/vazia).
+B) APROVAÇÃO. Marque \`aprovada\` = true se (e somente se):
+   • agente_sebrae E empresario_ou_funcionario.
    Compatibilidade de segmento NÃO afeta a aprovação.
 
 C) INCONSISTENTE só quando: o agente não aparece na foto principal, OU o agente aparece sozinho contra um fundo COMPLETAMENTE VAZIO (parede 100% lisa, sem nenhum elemento).
@@ -162,10 +159,10 @@ function normalize(raw: any) {
   };
   if (criterios.agente_sebrae && mentionsTwoPeople) criterios.empresario_ou_funcionario = true;
   const computedApproved = criterios.agente_sebrae
-    && (criterios.empresario_ou_funcionario || criterios.fachada || criterios.interior || criterios.fundo_valido)
+    && criterios.empresario_ou_funcionario
     && !criterios.gerada_por_ia;
   return {
-    aprovada: (!!raw?.aprovada || computedApproved) && !criterios.gerada_por_ia,
+    aprovada: computedApproved,
     criterios,
     scene_signature: typeof raw?.scene_signature === "string" ? raw.scene_signature.slice(0, 400) : "",
     justificativa: typeof raw?.justificativa === "string" ? raw.justificativa : "",

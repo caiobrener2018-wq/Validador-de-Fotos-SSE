@@ -35,7 +35,6 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
-      crossOrigin="anonymous"
       onError={() => setUseProxy(true)}
     />
   );
@@ -135,16 +134,34 @@ function AgentCardImpl({ agent }: Props) {
                 )}
                 {photo.status === 'done' && photo.analysis && (
                   <div className="space-y-1">
-                    <div className="flex items-center gap-1">
-                      {photo.analysis.aprovada ? (
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-destructive" />
-                      )}
-                      <span className={`text-sm font-medium ${photo.analysis.aprovada ? 'text-green-600' : 'text-destructive'}`}>
-                        {photo.analysis.aprovada ? 'Aprovada' : 'Inconsistência'}
-                      </span>
-                    </div>
+                    {(() => {
+                      const c = photo.analysis.criterios;
+                      const isApproved = c.agente_sebrae && c.empresario_ou_funcionario && !c.gerada_por_ia;
+                      const isNoBusinessPerson = c.agente_sebrae && !c.empresario_ou_funcionario && !c.gerada_por_ia;
+
+                      if (isApproved) {
+                        return (
+                          <div className="flex items-center gap-1">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                            <span className="text-sm font-medium text-green-600">Aprovada</span>
+                          </div>
+                        );
+                      } else if (isNoBusinessPerson) {
+                        return (
+                          <div className="flex items-center gap-1">
+                            <UserX className="h-4 w-4 text-amber-600" />
+                            <span className="text-sm font-medium text-amber-600">Sem empresário</span>
+                          </div>
+                        );
+                      } else {
+                        return (
+                          <div className="flex items-center gap-1">
+                            <XCircle className="h-4 w-4 text-destructive" />
+                            <span className="text-sm font-medium text-destructive">Inconsistência</span>
+                          </div>
+                        );
+                      }
+                    })()}
                     <div className="flex gap-1 flex-wrap">
                       {photo.analysis.criterios.fachada && <Badge variant="outline" className="text-xs">Fachada</Badge>}
                       {photo.analysis.criterios.agente_sebrae && <Badge variant="outline" className="text-xs">Agente Sebrae</Badge>}
