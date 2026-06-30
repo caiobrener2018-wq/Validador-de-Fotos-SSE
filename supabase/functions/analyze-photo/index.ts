@@ -94,9 +94,23 @@ Passo 3 — Fallback (sem referências úteis): use bom senso visual. Qualquer p
 
 REGRAS DE OURO:
 
-A) IDENTIFIQUE O AGENTE E CONTE PESSOAS na FOTO PRINCIPAL (ignore as referências para contagem de pessoas).
+A) CONTAGEM DE PESSOAS — REGRA MAIS IMPORTANTE PARA APROVAÇÃO:
+   Conte TODAS as pessoas visíveis na FOTO PRINCIPAL (ignore as referências para contagem).
+   Preencha o campo \`num_pessoas\` com o número total de pessoas na foto.
+   • Se a foto é uma SELFIE: quem está tirando a selfie TAMBÉM conta como pessoa. Se aparece alguém além de quem tira a selfie, são no mínimo 2 pessoas.
    • \`agente_sebrae\` = true conforme processo acima.
-   • \`empresario_ou_funcionario\` = true SOMENTE quando há 2+ pessoas na foto principal E uma delas é o agente. 2 pessoas sem agente NÃO conta. Apenas o agente sozinho NÃO conta.
+   • \`empresario_ou_funcionario\` = true se TODAS estas condições forem verdadeiras:
+     1. O agente Sebrae foi identificado na foto (agente_sebrae = true)
+     2. Há pelo menos MAIS UMA PESSOA além do agente na foto (num_pessoas >= 2)
+   A outra pessoa NÃO precisa ser identificada pelo nome, cargo ou função — basta EXISTIR na foto.
+   NÃO exija que a outra pessoa esteja de uniforme, crachá ou qualquer identificação.
+   Se o agente está na foto e há qualquer outra pessoa visível (mesmo parcialmente, ao fundo, ao lado), marque \`empresario_ou_funcionario\` = true.
+
+EXEMPLOS COMUNS:
+   • Selfie do agente com outra pessoa ao lado → num_pessoas=2, empresario_ou_funcionario=true
+   • Agente e empresário atrás do balcão → num_pessoas=2, empresario_ou_funcionario=true
+   • Foto em grupo com 3+ pessoas incluindo o agente → num_pessoas=3+, empresario_ou_funcionario=true
+   • Agente sozinho na foto → num_pessoas=1, empresario_ou_funcionario=false
 
 B) APROVAÇÃO. Marque \`aprovada\` = true se (e somente se):
    • agente_sebrae E empresario_ou_funcionario.
@@ -107,7 +121,7 @@ C) INCONSISTENTE só quando: o agente não aparece na foto principal, OU o agent
 Critérios booleanos:
 1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
 2 agente_sebrae: pessoa que bate com o perfil físico recorrente das referências, ou claramente consultor/visitante. NÃO depende de polo branca.
-3 empresario_ou_funcionario: TRUE se há 2+ pessoas E o agente está entre elas.
+3 empresario_ou_funcionario: TRUE se o agente foi identificado E há pelo menos mais 1 pessoa na foto. A outra pessoa NÃO precisa ser identificada — basta existir.
 4 interior: ambiente comercial interno.
 5 fundo_valido: TRUE para QUALQUER fundo que não seja parede 100% lisa.
 6 contexto_segmento: seja generoso.
@@ -116,6 +130,7 @@ Critérios booleanos:
 Responda APENAS JSON válido:
 {
   "aprovada": true,
+  "num_pessoas": 2,
   "criterios": {
     "fachada": true,
     "agente_sebrae": true,
@@ -126,7 +141,7 @@ Responda APENAS JSON válido:
     "gerada_por_ia": false
   },
   "scene_signature": "Descrição objetiva da cena em 1 frase (~25 palavras): tipo de local, NÚMERO DE PESSOAS, características físicas de quem parece o agente, 2-3 objetos marcantes, iluminação.",
-  "justificativa": "1-2 frases: quantas pessoas, qual o perfil físico recorrente do agente nas referências (gênero, pele, cabelo, óculos, porte) e como você o localizou na foto principal, e qual condição de aprovação foi atendida."
+  "justificativa": "1-2 frases: quantas pessoas (use o número exato), qual o perfil físico recorrente do agente nas referências (gênero, pele, cabelo, óculos, porte) e como você o localizou na foto principal, e qual condição de aprovação foi atendida."
 }${contextInfo}`;
 }
 
@@ -143,7 +158,38 @@ const EMPTY_CRITERIA = {
 function normalize(raw: any) {
   const c = (raw && typeof raw === "object" && raw.criterios) || {};
   const text = `${raw?.scene_signature || ""} ${raw?.justificativa || ""}`.toLowerCase();
-  const mentionsTwoPeople = /\b(duas|dois|2|dupla)\s+pessoas\b|\b2\+\s*pessoas\b|\bmais de uma pessoa\b/.test(text);
+
+  // Correção 2: Regex expandido para capturar todas as formas comuns de descrever múltiplas pessoas
+  const mentionsTwoPeople = new RegExp(
+    [
+      // Padrões originais
+      /\b(duas|dois|2|dupla)\s+pessoas\b/.source,
+      /\b2\+\s*pessoas\b/.source,
+      /\bmais de uma pessoa\b/.source,
+      // "outra pessoa", "outra mulher", "outro homem", etc.
+      /\b(outra|outro)\s+(pessoa|mulher|homem|senhor[a]?|indiv[ií]duo)\b/.source,
+      // "com uma pessoa", "com o/a empresário/a", "com funcionário/a", "com cliente"
+      /\bcom\s+(uma?|o|a|al?gum[as]?)\s*(pessoa|empres[aá]ri[oa]|funcion[aá]ri[oa]|cliente|colaborador[a]?|atendente|senhor[a]?|homem|mulher|profissional)\b/.source,
+      // "acompanhada/o de", "junto a/com/de"
+      /\b(acompanhad[oa]|junto)\s+(de|a|com)\b/.source,
+      // "não está sozinha/o", "não aparece sozinha/o"
+      /\bn[aã]o\s+(est[aá]|aparece)\s+sozinh[oa]\b/.source,
+      // "3 pessoas", "três pessoas", "várias pessoas", etc.
+      /\b([3-9]|\d{2,}|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|v[aá]ri[ao]s|diversas|algumas|m[uú]ltiplas)\s+pessoas\b/.source,
+      // "selfie com" (implica 2+ pessoas)
+      /\bselfie\s+com\b/.source,
+      // "ao lado de"
+      /\bao\s+lado\s+de\b/.source,
+      // "pessoa(s) ao fundo"
+      /\bpessoas?\s+ao\s+fundo\b/.source,
+      // "com outra", "com outras"
+      /\bcom\s+outr[ao]s?\b/.source,
+      // "entre pessoas", "entre elas/eles"
+      /\bentre\s+(pessoas|elas|eles)\b/.source,
+    ].join("|"),
+    "i"
+  ).test(text);
+
   const negatesAgent = /\b(n[aã]o|sem)\b.{0,40}\b(agente|consultor|sebrae)\b|\b(agente|consultor|sebrae)\b.{0,30}\bn[aã]o\b.{0,20}\b(aparece|identificado|identificada|vis[ií]vel)\b/.test(text);
   const mentionsAgent = !negatesAgent && /\b(agente|consultor|sebrae|atendente|crach[aá]|uniforme|polo)\b/.test(text);
   const mentionsInterior = /\b(interior|ambiente interno|loja|balc[aã]o|prateleira|produtos|escrit[oó]rio|oficina|comercial)\b/.test(text);
@@ -157,7 +203,16 @@ function normalize(raw: any) {
     contexto_segmento: !!c.contexto_segmento,
     gerada_por_ia: !!c.gerada_por_ia,
   };
+
+  // Correção 3: Usar campo num_pessoas da IA para determinar empresário
+  const numPessoas = typeof raw?.num_pessoas === "number" ? raw.num_pessoas : 0;
+  if (criterios.agente_sebrae && numPessoas >= 2) {
+    criterios.empresario_ou_funcionario = true;
+  }
+
+  // Safety net: regex sobre texto livre como fallback
   if (criterios.agente_sebrae && mentionsTwoPeople) criterios.empresario_ou_funcionario = true;
+
   const computedApproved = criterios.agente_sebrae
     && criterios.empresario_ou_funcionario
     && !criterios.gerada_por_ia;
