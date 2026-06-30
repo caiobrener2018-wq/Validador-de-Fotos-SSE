@@ -106,10 +106,15 @@ A) CONTAGEM DE PESSOAS — REGRA MAIS IMPORTANTE PARA APROVAÇÃO:
    NÃO exija que a outra pessoa esteja de uniforme, crachá ou qualquer identificação.
    Se o agente está na foto e há qualquer outra pessoa visível (mesmo parcialmente, ao fundo, ao lado), marque \`empresario_ou_funcionario\` = true.
 
+   ATENÇÃO — REGRA CRÍTICA: NÃO classifique outras pessoas como "cliente", "consumidor", "visitante" ou "transeunte".
+   No contexto do programa Sebrae na Sua Empresa, QUALQUER pessoa que apareça na foto além do agente Sebrae é considerada o EMPRESÁRIO ou FUNCIONÁRIO da empresa visitada. Não importa a aparência, idade, roupa ou posição na foto.
+   Se você identificou o agente E vê qualquer outro ser humano na foto (mesmo ao fundo, parcialmente visível, de costas), DEVE marcar \`empresario_ou_funcionario\` = true.
+
 EXEMPLOS COMUNS:
    • Selfie do agente com outra pessoa ao lado → num_pessoas=2, empresario_ou_funcionario=true
    • Agente e empresário atrás do balcão → num_pessoas=2, empresario_ou_funcionario=true
    • Foto em grupo com 3+ pessoas incluindo o agente → num_pessoas=3+, empresario_ou_funcionario=true
+   • Agente e uma pessoa ao fundo da loja → num_pessoas=2, empresario_ou_funcionario=true (NÃO chame de "cliente")
    • Agente sozinho na foto → num_pessoas=1, empresario_ou_funcionario=false
 
 B) APROVAÇÃO. Marque \`aprovada\` = true se (e somente se):
@@ -121,7 +126,7 @@ C) INCONSISTENTE só quando: o agente não aparece na foto principal, OU o agent
 Critérios booleanos:
 1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
 2 agente_sebrae: pessoa que bate com o perfil físico recorrente das referências, ou claramente consultor/visitante. NÃO depende de polo branca.
-3 empresario_ou_funcionario: TRUE se o agente foi identificado E há pelo menos mais 1 pessoa na foto. A outra pessoa NÃO precisa ser identificada — basta existir.
+3 empresario_ou_funcionario: TRUE se o agente foi identificado E há pelo menos mais 1 pessoa na foto. Qualquer pessoa além do agente = empresário/funcionário. NÃO use "cliente", "consumidor" ou "transeunte".
 4 interior: ambiente comercial interno.
 5 fundo_valido: TRUE para QUALQUER fundo que não seja parede 100% lisa.
 6 contexto_segmento: seja generoso.
@@ -169,7 +174,7 @@ function normalize(raw: any) {
       // "outra pessoa", "outra mulher", "outro homem", etc.
       /\b(outra|outro)\s+(pessoa|mulher|homem|senhor[a]?|indiv[ií]duo)\b/.source,
       // "com uma pessoa", "com o/a empresário/a", "com funcionário/a", "com cliente"
-      /\bcom\s+(uma?|o|a|al?gum[as]?)\s*(pessoa|empres[aá]ri[oa]|funcion[aá]ri[oa]|cliente|colaborador[a]?|atendente|senhor[a]?|homem|mulher|profissional)\b/.source,
+      /\bcom\s+(uma?|o|a|al?gum[as]?)\s*(pessoa|empres[aá]ri[oa]|funcion[aá]ri[oa]|cliente|colaborador[a]?|atendente|senhor[a]?|homem|mulher|profissional|jovem|rapaz|mo[cç]a|crian[cç]a|garoto|garota)\b/.source,
       // "acompanhada/o de", "junto a/com/de"
       /\b(acompanhad[oa]|junto)\s+(de|a|com)\b/.source,
       // "não está sozinha/o", "não aparece sozinha/o"
@@ -186,6 +191,12 @@ function normalize(raw: any) {
       /\bcom\s+outr[ao]s?\b/.source,
       // "entre pessoas", "entre elas/eles"
       /\bentre\s+(pessoas|elas|eles)\b/.source,
+      // "há um/uma [pessoa]" — captura "há um cliente", "há uma pessoa", "há um homem", etc.
+      /\bh[aá]\s+(um|uma|\d+)\s*(pessoa|cliente|consumidor[a]?|empres[aá]ri[oa]|funcion[aá]ri[oa]|colaborador[a]?|homem|mulher|jovem|rapaz|mo[cç]a|senhor[a]?|garoto|garota|indiv[ií]duo|atendente|profissional|crian[cç]a)\b/.source,
+      // "um/uma cliente ao fundo", "um homem ao lado", etc.
+      /\b(um|uma)\s+(cliente|pessoa|empres[aá]ri[oa]|funcion[aá]ri[oa]|homem|mulher|jovem|rapaz|mo[cç]a|senhor[a]?)\s+(ao fundo|ao lado|atr[aá]s|na frente|pr[oó]xim[oa])\b/.source,
+      // Menção direta de pessoa por papel (sem prefixo) — "cliente", "consumidor" mencionados no texto
+      /\b(cliente|consumidor[a]?)\s+(ao fundo|ao lado|atr[aá]s|vis[ií]vel|presente|na foto|na imagem|na cena|aparece)\b/.source,
     ].join("|"),
     "i"
   ).test(text);
