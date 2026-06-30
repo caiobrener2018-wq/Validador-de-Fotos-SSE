@@ -99,16 +99,17 @@ A) CONTAGEM DE PESSOAS — REGRA MAIS IMPORTANTE PARA APROVAÇÃO:
    Preencha o campo \`num_pessoas\` com o número total de pessoas na foto.
    • Se a foto é uma SELFIE: quem está tirando a selfie TAMBÉM conta como pessoa. Se aparece alguém além de quem tira a selfie, são no mínimo 2 pessoas.
    • \`agente_sebrae\` = true conforme processo acima.
-   • \`empresario_ou_funcionario\` = true se TODAS estas condições forem verdadeiras:
-     1. O agente Sebrae foi identificado na foto (agente_sebrae = true)
-     2. Há pelo menos MAIS UMA PESSOA além do agente na foto (num_pessoas >= 2)
-   A outra pessoa NÃO precisa ser identificada pelo nome, cargo ou função — basta EXISTIR na foto.
-   NÃO exija que a outra pessoa esteja de uniforme, crachá ou qualquer identificação.
-   Se o agente está na foto e há qualquer outra pessoa visível (mesmo parcialmente, ao fundo, ao lado), marque \`empresario_ou_funcionario\` = true.
+   • \`empresario_ou_funcionario\` = true se houver 2 OU MAIS PESSOAS visíveis na foto (\`num_pessoas\` >= 2).
+     ATENÇÃO: Você não precisa ter identificado o agente com sucesso para marcar \`empresario_ou_funcionario\` = true. Se há 2 pessoas na foto e você não sabe quem é o agente, AINDA ASSIM \`empresario_ou_funcionario\` = true.
+
+   VARREDURA MINUCIOSA OBRIGATÓRIA: Você tem falhado em contar pessoas. Antes de responder "é a única na cena", olhe atentamente para:
+   - O fundo da imagem, atrás da pessoa em primeiro plano.
+   - Os cantos e bordas da foto (pessoas cortadas, apenas um braço, ombro ou metade do rosto).
+   - Reflexos em espelhos ou vidros.
+   Se houver qualquer indício visual de uma segunda pessoa, num_pessoas >= 2.
 
    ATENÇÃO — REGRA CRÍTICA: NÃO classifique outras pessoas como "cliente", "consumidor", "visitante" ou "transeunte".
-   No contexto do programa Sebrae na Sua Empresa, QUALQUER pessoa que apareça na foto além do agente Sebrae é considerada o EMPRESÁRIO ou FUNCIONÁRIO da empresa visitada. Não importa a aparência, idade, roupa ou posição na foto.
-   Se você identificou o agente E vê qualquer outro ser humano na foto (mesmo ao fundo, parcialmente visível, de costas), DEVE marcar \`empresario_ou_funcionario\` = true.
+   No contexto do programa Sebrae na Sua Empresa, QUALQUER pessoa que apareça na foto além da pessoa principal é considerada o EMPRESÁRIO ou FUNCIONÁRIO da empresa visitada. Não importa a aparência, idade, roupa ou posição na foto.
 
 EXEMPLOS COMUNS:
    • Selfie do agente com outra pessoa ao lado → num_pessoas=2, empresario_ou_funcionario=true
@@ -126,7 +127,7 @@ C) INCONSISTENTE só quando: o agente não aparece na foto principal, OU o agent
 Critérios booleanos:
 1 fachada: fachada, marca, logo, placa, vitrine ou letreiro do estabelecimento visível.
 2 agente_sebrae: pessoa que bate com o perfil físico recorrente das referências, ou claramente consultor/visitante. NÃO depende de polo branca.
-3 empresario_ou_funcionario: TRUE se o agente foi identificado E há pelo menos mais 1 pessoa na foto. Qualquer pessoa além do agente = empresário/funcionário. NÃO use "cliente", "consumidor" ou "transeunte".
+3 empresario_ou_funcionario: TRUE se há 2 ou mais pessoas na foto. Independe de o agente ter sido identificado. Qualquer pessoa extra = empresário. NÃO use "cliente".
 4 interior: ambiente comercial interno.
 5 fundo_valido: TRUE para QUALQUER fundo que não seja parede 100% lisa.
 6 contexto_segmento: seja generoso.
@@ -215,14 +216,14 @@ function normalize(raw: any) {
     gerada_por_ia: !!c.gerada_por_ia,
   };
 
-  // Correção 3: Usar campo num_pessoas da IA para determinar empresário
+  // Correção 3: Usar campo num_pessoas da IA para determinar empresário (independente de identificar o agente)
   const numPessoas = typeof raw?.num_pessoas === "number" ? raw.num_pessoas : 0;
-  if (criterios.agente_sebrae && numPessoas >= 2) {
+  if (numPessoas >= 2) {
     criterios.empresario_ou_funcionario = true;
   }
 
-  // Safety net: regex sobre texto livre como fallback
-  if (criterios.agente_sebrae && mentionsTwoPeople) criterios.empresario_ou_funcionario = true;
+  // Safety net: regex sobre texto livre como fallback (independente de identificar o agente)
+  if (mentionsTwoPeople) criterios.empresario_ou_funcionario = true;
 
   const computedApproved = criterios.agente_sebrae
     && criterios.empresario_ou_funcionario
