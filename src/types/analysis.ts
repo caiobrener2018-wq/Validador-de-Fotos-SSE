@@ -52,6 +52,8 @@ export interface AgentData {
   rawRow?: Record<string, unknown>;
   /** Cabeçalhos originais, em ordem, para reconstruir a planilha no export. */
   rawHeaders?: string[];
+  /** Override manual de status definido pelo operador. Se definido, prevalece sobre o status computado. */
+  statusOverride?: import('@/lib/agentStatus').AgentStatus;
 }
 
 export type FilterType =

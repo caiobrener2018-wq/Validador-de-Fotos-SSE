@@ -4,7 +4,7 @@ import { parseExcelFile } from '@/lib/parseExcel';
 import { exportResultsToExcel } from '@/lib/exportResults';
 import { exportImagesToZip } from '@/lib/exportImages';
 import { supabase } from '@/integrations/supabase/client';
-import { getAgentStatus } from '@/lib/agentStatus';
+import { getEffectiveStatus, type AgentStatus } from '@/lib/agentStatus';
 
 import { FileUpload } from '@/components/FileUpload';
 import { DashboardSummary } from '@/components/DashboardSummary';
@@ -119,6 +119,14 @@ const Index = () => {
   const pausedRef = useRef(false);
   const cancelledRef = useRef(false);
   const [isPaused, setIsPaused] = useState(false);
+
+  const handleStatusOverride = useCallback((excelRow: number, newStatus: AgentStatus | null) => {
+    setAgents(prev => prev.map(a =>
+      a.excelRow === excelRow
+        ? { ...a, statusOverride: newStatus ?? undefined }
+        : a
+    ));
+  }, []);
 
   const uniqueAgentNames = useMemo(() => [...new Set(agents.map(a => a.name))].sort(), [agents]);
   const uniqueAgencies = useMemo(() => [...new Set(agents.map(a => a.agency).filter(Boolean))].sort(), [agents]);
@@ -441,7 +449,7 @@ const Index = () => {
     if (cidadeFilter !== 'all' && agent.cidade !== cidadeFilter) return false;
     if (loteFilter !== 'all' && agent.lote !== loteFilter) return false;
     if (filter === 'all') return true;
-    const status = getAgentStatus(agent);
+    const status = getEffectiveStatus(agent);
     if (filter === 'no_photos') return status === 'no_photos';
     if (filter === 'duplicate') return status === 'duplicate';
     if (filter === 'ai_generated') return status === 'ai_generated';
@@ -626,7 +634,7 @@ const Index = () => {
 
             <div className="grid gap-4 md:grid-cols-2">
               {visibleAgents.map((agent, idx) => (
-                <AgentCard key={`${agent.excelRow}-${idx}`} agent={agent} />
+                <AgentCard key={`${agent.excelRow}-${idx}`} agent={agent} onStatusOverride={handleStatusOverride} />
               ))}
             </div>
 

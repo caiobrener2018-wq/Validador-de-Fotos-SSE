@@ -1,13 +1,15 @@
 import { useState, memo, type CSSProperties } from 'react';
 import { AgentData } from '@/types/analysis';
-import { getAgentStatus } from '@/lib/agentStatus';
+import { getEffectiveStatus, getAgentStatus, EDITABLE_STATUSES, AGENT_STATUS_LABEL, type AgentStatus } from '@/lib/agentStatus';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { CheckCircle, XCircle, Loader2, AlertTriangle, Copy, Sparkles, UserX } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { CheckCircle, XCircle, Loader2, AlertTriangle, Copy, Sparkles, UserX, Pencil, RotateCcw } from 'lucide-react';
 
 interface Props {
   agent: AgentData;
+  onStatusOverride?: (excelRow: number, status: AgentStatus | null) => void;
 }
 
 const SUPABASE_URL = "https://kcuuymecihfjgqmvybzk.supabase.co";
@@ -40,11 +42,14 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
   );
 }
 
-function AgentCardImpl({ agent }: Props) {
+function AgentCardImpl({ agent, onStatusOverride }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const renderHint = { contentVisibility: 'auto', containIntrinsicSize: '260px' } as CSSProperties;
-  const status = getAgentStatus(agent);
+  const status = getEffectiveStatus(agent);
+  const computedStatus = getAgentStatus(agent);
+  const hasOverride = agent.statusOverride != null;
   const isAnalyzing = status === 'analyzing';
+  const canEdit = !isAnalyzing && status !== 'pending' && status !== 'no_photos';
 
   const borderClass =
     status === 'ai_generated' ? 'border-purple-500/60' :
@@ -74,12 +79,49 @@ function AgentCardImpl({ agent }: Props) {
               )}
             </div>
             {status === 'no_photos' && <Badge variant="outline" className="border-amber-500 text-amber-700"><AlertTriangle className="h-3 w-3 mr-1" />Não possui fotos</Badge>}
-            {status === 'ai_generated' && <Badge variant="outline" className="border-purple-500 text-purple-700"><Sparkles className="h-3 w-3 mr-1" />IA</Badge>}
-            {status === 'duplicate' && <Badge variant="outline" className="border-orange-500 text-orange-700"><Copy className="h-3 w-3 mr-1" />Duplicada</Badge>}
-            {status === 'no_business_person' && <Badge variant="outline" className="border-amber-500 text-amber-700"><UserX className="h-3 w-3 mr-1" />Sem empresário</Badge>}
-            {isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
-            {status === 'approved' && <Badge className="bg-green-600 hover:bg-green-700 text-white">Aprovado</Badge>}
-            {status === 'inconsistent' && <Badge variant="destructive">Inconsistência</Badge>}
+            {canEdit ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="focus:outline-none">
+                    {status === 'ai_generated' && <Badge variant="outline" className="border-purple-500 text-purple-700 cursor-pointer hover:bg-purple-50 transition-colors"><Sparkles className="h-3 w-3 mr-1" />IA{hasOverride && <Pencil className="h-2.5 w-2.5 ml-1" />}</Badge>}
+                    {status === 'duplicate' && <Badge variant="outline" className="border-orange-500 text-orange-700 cursor-pointer hover:bg-orange-50 transition-colors"><Copy className="h-3 w-3 mr-1" />Duplicada{hasOverride && <Pencil className="h-2.5 w-2.5 ml-1" />}</Badge>}
+                    {status === 'no_business_person' && <Badge variant="outline" className="border-amber-500 text-amber-700 cursor-pointer hover:bg-amber-50 transition-colors"><UserX className="h-3 w-3 mr-1" />Sem empresário{hasOverride && <Pencil className="h-2.5 w-2.5 ml-1" />}</Badge>}
+                    {status === 'approved' && <Badge className="bg-green-600 hover:bg-green-700 text-white cursor-pointer">Aprovado{hasOverride && <Pencil className="h-2.5 w-2.5 ml-1" />}</Badge>}
+                    {status === 'inconsistent' && <Badge variant="destructive" className="cursor-pointer">Inconsistência{hasOverride && <Pencil className="h-2.5 w-2.5 ml-1" />}</Badge>}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <p className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Alterar status</p>
+                  {EDITABLE_STATUSES.map(s => (
+                    <DropdownMenuItem
+                      key={s.value}
+                      className={status === s.value ? 'bg-accent font-semibold' : ''}
+                      onClick={() => onStatusOverride?.(agent.excelRow, s.value)}
+                    >
+                      {s.value === 'approved' && <CheckCircle className="h-3.5 w-3.5 mr-2 text-green-600" />}
+                      {s.value === 'no_business_person' && <UserX className="h-3.5 w-3.5 mr-2 text-amber-600" />}
+                      {s.value === 'inconsistent' && <XCircle className="h-3.5 w-3.5 mr-2 text-destructive" />}
+                      {s.value === 'duplicate' && <Copy className="h-3.5 w-3.5 mr-2 text-orange-600" />}
+                      {s.value === 'ai_generated' && <Sparkles className="h-3.5 w-3.5 mr-2 text-purple-600" />}
+                      {s.label}
+                    </DropdownMenuItem>
+                  ))}
+                  {hasOverride && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => onStatusOverride?.(agent.excelRow, null)}>
+                        <RotateCcw className="h-3.5 w-3.5 mr-2 text-muted-foreground" />
+                        Restaurar original ({AGENT_STATUS_LABEL[computedStatus]})
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <>
+                {isAnalyzing && <Badge variant="secondary"><Loader2 className="h-3 w-3 animate-spin mr-1" />Analisando</Badge>}
+              </>
+            )}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -202,4 +244,4 @@ function AgentCardImpl({ agent }: Props) {
   );
 }
 
-export const AgentCard = memo(AgentCardImpl, (prev, next) => prev.agent === next.agent);
+export const AgentCard = memo(AgentCardImpl, (prev, next) => prev.agent === next.agent && prev.onStatusOverride === next.onStatusOverride);

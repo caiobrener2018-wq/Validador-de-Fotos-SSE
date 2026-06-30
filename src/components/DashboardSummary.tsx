@@ -1,5 +1,5 @@
 import { AgentData } from '@/types/analysis';
-import { getAgentStatus } from '@/lib/agentStatus';
+import { getEffectiveStatus } from '@/lib/agentStatus';
 import { Card, CardContent } from '@/components/ui/card';
 import { CheckCircle, XCircle, Image, Users, Building2, AlertTriangle, Copy, Sparkles, UserX } from 'lucide-react';
 
@@ -18,7 +18,7 @@ export function DashboardSummary({ agents }: Props) {
   let noBusinessCount = 0;
 
   for (const a of agents) {
-    const s = getAgentStatus(a);
+    const s = getEffectiveStatus(a);
     if (s === 'approved') approvedCount++;
     else if (s === 'inconsistent') inconsistentCount++;
     else if (s === 'no_photos') noPhotosCount++;

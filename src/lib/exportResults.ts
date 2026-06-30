@@ -1,5 +1,5 @@
 import { AgentData } from '@/types/analysis';
-import { getAgentStatus, AGENT_STATUS_LABEL, AgentStatus } from './agentStatus';
+import { getEffectiveStatus, AGENT_STATUS_LABEL, AgentStatus } from './agentStatus';
 
 /**
  * Exporta um relatório espelhando a planilha original (todas as colunas, na mesma ordem)
@@ -83,7 +83,7 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
 
   for (let i = 0; i < agents.length; i++) {
     const agent = agents[i];
-    const status = getAgentStatus(agent);
+    const status = getEffectiveStatus(agent);
     const statusLabel = AGENT_STATUS_LABEL[status];
 
     // Valores na ordem dos cabeçalhos originais
@@ -109,7 +109,10 @@ export async function exportResultsToExcel(agents: AgentData[], onProgress?: (pc
     });
 
     // Justificativa breve e direta
-    const justificativa = buildJustification(agent, status);
+    let justificativa = buildJustification(agent, status);
+    if (agent.statusOverride) {
+      justificativa = justificativa ? `[Status alterado manualmente] ${justificativa}` : '[Status alterado manualmente]';
+    }
     const grupoCpf = agent.cpfRespondente ? cpfGroup.get(agent.cpfRespondente) ?? '' : '';
 
     rowValues.push(statusLabel, justificativa, grupoCpf);

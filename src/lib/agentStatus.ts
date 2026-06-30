@@ -52,3 +52,17 @@ export const AGENT_STATUS_LABEL: Record<AgentStatus, string> = {
   approved: 'Aprovado',
   inconsistent: 'Inconsistência',
 };
+
+/** Retorna o status efetivo: override manual se definido, senão o status computado. */
+export function getEffectiveStatus(agent: AgentData): AgentStatus {
+  return agent.statusOverride ?? getAgentStatus(agent);
+}
+
+/** Status disponíveis para override manual pelo operador. */
+export const EDITABLE_STATUSES: { value: AgentStatus; label: string }[] = [
+  { value: 'approved', label: 'Aprovado' },
+  { value: 'no_business_person', label: 'Sem empresário' },
+  { value: 'inconsistent', label: 'Inconsistência' },
+  { value: 'duplicate', label: 'Duplicada' },
+  { value: 'ai_generated', label: 'IA' },
+];
