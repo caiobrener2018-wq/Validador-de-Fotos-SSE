@@ -275,7 +275,7 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
     }
   }
   userContent.push({ type: "text", text: `FOTO PRINCIPAL — analise ESTA foto da empresa "${companyName || 'N/A'}". Conte pessoas e avalie o cenário SOMENTE dela. Procure nela o perfil físico do agente identificado nas referências:` });
-  userContent.push({ type: "image_url", image_url: { url: imageUrl, detail: "high" } });
+  userContent.push({ type: "image_url", image_url: { url: imageUrl, detail: "auto" } });
 
 
   const body: Record<string, unknown> = {
@@ -287,9 +287,9 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
     ],
   };
   if (usesCompletionTokens) {
-    body.max_completion_tokens = 1000;
+    body.max_completion_tokens = 500;
   } else {
-    body.max_tokens = 500;
+    body.max_tokens = 350;
   }
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -339,7 +339,7 @@ async function callPeopleCount(openaiKey: string, model: string, imageUrl: strin
       { role: "system", content: PEOPLE_COUNT_PROMPT },
       { role: "user", content: [
         { type: "text", text: "Conte TODAS as pessoas humanas visíveis nesta foto. Escaneie cada canto, borda e fundo." },
-        { type: "image_url", image_url: { url: imageUrl, detail: "high" } },
+        { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
       ] },
     ],
   };
@@ -393,10 +393,12 @@ serve(async (req) => {
     } catch (e) {
       return respond(false, { error: "image_fetch", message: e instanceof Error ? e.message : "Falha ao baixar imagem" });
     }
-    const imageHash = await sha256(bytes);
+    // Inicia hash e chamada à IA em paralelo para economizar tempo
+    const hashPromise = sha256(bytes);
     const dataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
 
     let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", agentName || "", imageUrl, refs);
+    const imageHash = await hashPromise;
     if (!response.ok && response.status === 400) {
       const base64Refs: string[] = [];
       for (const ref of refs) {

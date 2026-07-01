@@ -17,19 +17,21 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Quatro workers paralelos: 2 modelos × 2 workers cada.
+// Seis workers paralelos: 2 modelos × 3 workers cada.
 // gpt-4.1-mini = melhor modelo legado para visão (1M ctx, alta precisão)
 // gpt-5-mini   = nova geração, superior em reasoning multimodal e velocidade
-// Concorrência controlada para evitar 429 (rate_limit) da OpenAI.
+// Maior paralelismo = mais fotos processadas simultaneamente.
 const WORKERS = [
-  { model: 'gpt-4.1-mini', rpm: 300 },
-  { model: 'gpt-4.1-mini', rpm: 300 },
-  { model: 'gpt-5-mini',   rpm: 300 },
-  { model: 'gpt-5-mini',   rpm: 300 },
+  { model: 'gpt-4.1-mini', rpm: 500 },
+  { model: 'gpt-4.1-mini', rpm: 500 },
+  { model: 'gpt-4.1-mini', rpm: 500 },
+  { model: 'gpt-5-mini',   rpm: 500 },
+  { model: 'gpt-5-mini',   rpm: 500 },
+  { model: 'gpt-5-mini',   rpm: 500 },
 ] as const;
 const MIN_CONCURRENCY_PER_WORKER = 2;
-const INITIAL_CONCURRENCY_PER_WORKER = 3;
-const MAX_CONCURRENCY_PER_WORKER = 8;
+const INITIAL_CONCURRENCY_PER_WORKER = 5;
+const MAX_CONCURRENCY_PER_WORKER = 12;
 
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
@@ -103,9 +105,9 @@ async function analyzeWithRetry(
       if (err?.cancelled) throw err;
       if (attempt >= maxRetries) throw err;
       if (err?.rateLimit) onRateLimit(Number(err.retryAfterMs) || 3000);
-      const base = err?.rateLimit ? Math.max(Number(err.retryAfterMs) || 3000, 3000) : 1500;
-      const jitter = Math.floor(Math.random() * 500);
-      await controlledDelay(base * Math.pow(1.45, attempt) + jitter);
+      const base = err?.rateLimit ? Math.max(Number(err.retryAfterMs) || 3000, 3000) : 800;
+      const jitter = Math.floor(Math.random() * 400);
+      await controlledDelay(base * Math.pow(1.25, attempt) + jitter);
     }
   }
 }
@@ -204,7 +206,7 @@ const Index = () => {
     // Throttle React updates to avoid freezing UI with thousands of photos
     let dirty = false;
     let lastFlush = 0;
-    const FLUSH_INTERVAL = 400;
+    const FLUSH_INTERVAL = 600;
     const flush = () => {
       dirty = false;
       lastFlush = Date.now();
