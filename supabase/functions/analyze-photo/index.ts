@@ -383,23 +383,27 @@ serve(async (req) => {
       ? referenceUrls.filter((u: unknown) => typeof u === "string" && u && u !== imageUrl).slice(0, 6)
       : [];
 
-    // Baixa a imagem para calcular o hash (deduplicação por conteúdo)
-    let bytes: Uint8Array;
-    let mimeType: string;
-    try {
-      const fetchedImage = await fetchImageBytes(imageUrl);
-      bytes = fetchedImage.bytes;
-      mimeType = fetchedImage.mimeType;
-    } catch (e) {
-      return respond(false, { error: "image_fetch", message: e instanceof Error ? e.message : "Falha ao baixar imagem" });
-    }
-    // Inicia hash e chamada à IA em paralelo para economizar tempo
-    const hashPromise = sha256(bytes);
-    const dataUrl = `data:${mimeType};base64,${toBase64(bytes)}`;
+    // Dispara a chamada para OpenAI IMEDIATAMENTE (passando a URL direta)
+    const openAIPromise = callOpenAI(openaiKey, model, systemPrompt, companyName || "", agentName || "", imageUrl, refs);
 
-    let response = await callOpenAI(openaiKey, model, systemPrompt, companyName || "", agentName || "", imageUrl, refs);
-    const imageHash = await hashPromise;
-    if (!response.ok && response.status === 400) {
+    // Em paralelo, baixa a imagem para calcular o hash de deduplicação (sem bloquear a IA)
+    const hashPromise = fetchImageBytes(imageUrl)
+      .then(async (fetched) => {
+        const hash = await sha256(fetched.bytes);
+        return { hash, fetched };
+      })
+      .catch((e) => {
+        console.warn("Falha ao baixar imagem para hash:", e);
+        return null;
+      });
+
+    let response = await openAIPromise;
+    const hashResult = await hashPromise;
+    const imageHash = hashResult?.hash;
+
+    // Fallback: se a OpenAI recusar a URL (erro 400) e tivermos baixado a imagem, tentamos via base64
+    if (!response.ok && response.status === 400 && hashResult) {
+      const dataUrl = `data:${hashResult.fetched.mimeType};base64,${toBase64(hashResult.fetched.bytes)}`;
       const base64Refs: string[] = [];
       for (const ref of refs) {
         try {

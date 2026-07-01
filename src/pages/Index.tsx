@@ -17,21 +17,27 @@ import { useToast } from '@/hooks/use-toast';
 import { ExportDialog } from '@/components/ExportDialog';
 import { Play, Download, Filter, RefreshCw, ImageDown, FileSpreadsheet, Pause, X } from 'lucide-react';
 
-// Seis workers paralelos: 2 modelos × 3 workers cada.
-// gpt-4.1-mini = melhor modelo legado para visão (1M ctx, alta precisão)
-// gpt-5-mini   = nova geração, superior em reasoning multimodal e velocidade
+// Doze workers paralelos para velocidade extrema.
+// gpt-4o-mini = modelo mais rápido da OpenAI para visão.
+// gpt-4.1-mini e gpt-5-mini = fallback robustos.
 // Maior paralelismo = mais fotos processadas simultaneamente.
 const WORKERS = [
-  { model: 'gpt-4.1-mini', rpm: 500 },
-  { model: 'gpt-4.1-mini', rpm: 500 },
-  { model: 'gpt-4.1-mini', rpm: 500 },
-  { model: 'gpt-5-mini',   rpm: 500 },
-  { model: 'gpt-5-mini',   rpm: 500 },
-  { model: 'gpt-5-mini',   rpm: 500 },
+  { model: 'gpt-4o-mini',  rpm: 1000 },
+  { model: 'gpt-4o-mini',  rpm: 1000 },
+  { model: 'gpt-4o-mini',  rpm: 1000 },
+  { model: 'gpt-4o-mini',  rpm: 1000 },
+  { model: 'gpt-5-mini',   rpm: 1000 },
+  { model: 'gpt-5-mini',   rpm: 1000 },
+  { model: 'gpt-5-mini',   rpm: 1000 },
+  { model: 'gpt-5-mini',   rpm: 1000 },
+  { model: 'gpt-4.1-mini', rpm: 1000 },
+  { model: 'gpt-4.1-mini', rpm: 1000 },
+  { model: 'gpt-4.1-mini', rpm: 1000 },
+  { model: 'gpt-4.1-mini', rpm: 1000 },
 ] as const;
-const MIN_CONCURRENCY_PER_WORKER = 2;
-const INITIAL_CONCURRENCY_PER_WORKER = 5;
-const MAX_CONCURRENCY_PER_WORKER = 12;
+const MIN_CONCURRENCY_PER_WORKER = 3;
+const INITIAL_CONCURRENCY_PER_WORKER = 6;
+const MAX_CONCURRENCY_PER_WORKER = 16;
 
 const INITIAL_VISIBLE_AGENTS = 120;
 const LOAD_MORE_AGENTS = 120;
