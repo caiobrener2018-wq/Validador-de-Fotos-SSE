@@ -34,8 +34,6 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
       src={src}
       alt={alt}
       className={className}
-      loading="lazy"
-      decoding="async"
       referrerPolicy="no-referrer"
       onError={() => setUseProxy(true)}
     />
@@ -44,7 +42,7 @@ function ProxyImg({ src, alt, className }: { src: string; alt: string; className
 
 function AgentCardImpl({ agent, onStatusOverride }: Props) {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
-  const renderHint = { contentVisibility: 'auto', containIntrinsicSize: '260px' } as CSSProperties;
+  const [isExpanded, setIsExpanded] = useState(false);
   const status = getEffectiveStatus(agent);
   const computedStatus = getAgentStatus(agent);
   const hasOverride = agent.statusOverride != null;
@@ -60,29 +58,33 @@ function AgentCardImpl({ agent, onStatusOverride }: Props) {
 
   return (
     <>
-      <Card className={borderClass} style={renderHint}>
+      <Card className={borderClass}>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <CardTitle className="text-base">{agent.name}</CardTitle>
-              {agent.agency && <p className="text-xs font-medium text-primary truncate">{agent.agency}</p>}
-              <p className="text-sm text-muted-foreground truncate">
+          <div className="flex items-start justify-between gap-4">
+            <div 
+              className="min-w-0 cursor-pointer group" 
+              onClick={() => setIsExpanded(!isExpanded)}
+              title="Clique para expandir/recolher os detalhes"
+            >
+              <CardTitle className="text-base group-hover:text-primary transition-colors">{agent.name}</CardTitle>
+              {agent.agency && <p className={`text-xs font-medium text-primary mt-1 ${isExpanded ? '' : 'truncate'}`}>{agent.agency}</p>}
+              <p className={`text-sm text-muted-foreground ${isExpanded ? '' : 'truncate'}`}>
                 {agent.companyName}
                 {agent.cnpj ? <span className="text-muted-foreground/70"> • CNPJ {agent.cnpj}</span> : null}
                 <span className="text-muted-foreground/60"> • Linha {agent.excelRow}</span>
               </p>
               {(agent.bairro || agent.cidade || agent.lote) && (
-                <p className="text-xs text-muted-foreground/80 truncate">
+                <p className={`text-xs text-muted-foreground/80 ${isExpanded ? '' : 'truncate'}`}>
                   {[agent.bairro, agent.cidade].filter(Boolean).join(' / ')}
                   {agent.lote ? ` • Lote ${agent.lote}` : ''}
                 </p>
               )}
             </div>
-            {status === 'no_photos' && <Badge variant="outline" className="border-amber-500 text-amber-700"><AlertTriangle className="h-3 w-3 mr-1" />Não possui fotos</Badge>}
+            {status === 'no_photos' && <Badge variant="outline" className="shrink-0 border-amber-500 text-amber-700 mt-1"><AlertTriangle className="h-3 w-3 mr-1" />Não possui fotos</Badge>}
             {canEdit ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="focus:outline-none">
+                  <button className="focus:outline-none shrink-0 mt-1">
                     {status === 'ai_generated' && <Badge variant="outline" className="border-purple-500 text-purple-700 cursor-pointer hover:bg-purple-50 transition-colors"><Sparkles className="h-3 w-3 mr-1" />IA{hasOverride && <Pencil className="h-2.5 w-2.5 ml-1" />}</Badge>}
                     {status === 'duplicate' && <Badge variant="outline" className="border-orange-500 text-orange-700 cursor-pointer hover:bg-orange-50 transition-colors"><Copy className="h-3 w-3 mr-1" />Duplicada{hasOverride && <Pencil className="h-2.5 w-2.5 ml-1" />}</Badge>}
                     {status === 'no_business_person' && <Badge variant="outline" className="border-amber-500 text-amber-700 cursor-pointer hover:bg-amber-50 transition-colors"><UserX className="h-3 w-3 mr-1" />Sem empresário{hasOverride && <Pencil className="h-2.5 w-2.5 ml-1" />}</Badge>}
