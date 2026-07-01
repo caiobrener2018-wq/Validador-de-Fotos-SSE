@@ -308,7 +308,23 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
 function extractOpenAIContent(text: string): string {
   try {
     const data = JSON.parse(text);
-    return data.choices?.[0]?.message?.content || "";
+    const choice = data.choices?.[0];
+    const content = choice?.message?.content;
+    // Standard string content
+    if (typeof content === "string" && content.length > 0) return content;
+    // Some models return content as array of parts
+    if (Array.isArray(content)) {
+      const textParts = content.filter((p: any) => p.type === "text").map((p: any) => p.text);
+      if (textParts.length > 0) return textParts.join("");
+    }
+    // GPT-5 Responses API fallback: output or output_text
+    if (typeof data.output_text === "string" && data.output_text.length > 0) return data.output_text;
+    if (typeof data.output === "string" && data.output.length > 0) return data.output;
+    // Log for debugging
+    console.warn("[extractOpenAIContent] No content found. finish_reason:", choice?.finish_reason,
+      "message keys:", choice?.message ? Object.keys(choice.message) : "none",
+      "response keys:", Object.keys(data));
+    return "";
   } catch {
     return "";
   }
@@ -409,6 +425,13 @@ serve(async (req) => {
     }
     const content = extractOpenAIContent(response.text);
     let result = parseJson(content);
+
+    // Se o parse falhou completamente (conteúdo vazio ou não-JSON da IA),
+    // retornar erro para que o frontend faça retry ao invés de marcar como 'done' com dados vazios.
+    if (result.justificativa === "Não foi possível analisar a imagem.") {
+      console.error("[analyze-photo] Parse falhou. content:", content?.slice(0, 200), "raw:", response.text?.slice(0, 300));
+      return respond(false, { error: "parse_error", message: "Não foi possível interpretar a resposta da IA. Será feito retry.", model });
+    }
 
     // SEGUNDA VERIFICAÇÃO: Se a primeira análise diz que há apenas 1 pessoa,
     // faz uma segunda chamada focada EXCLUSIVAMENTE em contar pessoas/rostos.

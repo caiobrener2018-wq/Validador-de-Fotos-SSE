@@ -34,8 +34,11 @@ export function getAgentStatus(agent: AgentData): AgentStatus {
   if (photos.some(p => p.status === 'ai_generated')) return 'ai_generated';
   if (photos.some(p => p.status === 'duplicate')) return 'duplicate';
 
-  // Se o agente está na foto mas não tem empresário, marca como no_business_person
-  if (donePhotos.some(p => p.analysis!.criterios.agente_sebrae && !p.analysis!.criterios.empresario_ou_funcionario)) {
+  // Se há fotos analisadas mas nenhuma tem empresário/funcionário detectado,
+  // marca como "sem empresário" — independente de o agente ter sido identificado ou não.
+  // (Cobre o caso onde o modelo não identifica o agente por falta de referência,
+  //  mas a foto claramente mostra apenas 1 pessoa.)
+  if (donePhotos.length > 0 && donePhotos.every(p => !p.analysis!.criterios.empresario_ou_funcionario)) {
     return 'no_business_person';
   }
 
