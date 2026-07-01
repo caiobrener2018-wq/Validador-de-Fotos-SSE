@@ -5,8 +5,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const DEFAULT_MODEL = "gpt-4o-mini";
-const ALLOWED_MODELS = new Set(["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1-nano", "gpt-5-mini", "gpt-4o", "gpt-4.1"]);
+const DEFAULT_MODEL = "gpt-4.1-mini";
+const ALLOWED_MODELS = new Set([
+  "gpt-4.1-mini", "gpt-4.1-nano",
+  "gpt-5-mini", "gpt-5.4-mini", "gpt-5.4-nano",
+  "gpt-4o-mini", "gpt-4o", "gpt-4.1",
+]);
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const DEFAULT_RETRY_AFTER_MS = 3000;
 
@@ -259,7 +263,7 @@ function parseRetryAfterMs(text: string): number {
 
 async function callOpenAI(openaiKey: string, model: string, systemPrompt: string, companyName: string, agentName: string, imageUrl: string, referenceUrls: string[] = []) {
   // GPT-5 family and newer reasoning models use max_completion_tokens instead of max_tokens
-  const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model);
+  const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model) || /^gpt-5\.4/i.test(model);
   const userContent: any[] = [];
   if (referenceUrls.length > 0) {
     userContent.push({
@@ -285,7 +289,7 @@ async function callOpenAI(openaiKey: string, model: string, systemPrompt: string
   if (usesCompletionTokens) {
     body.max_completion_tokens = 1000;
   } else {
-    body.max_tokens = 600;
+    body.max_tokens = 500;
   }
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -311,7 +315,7 @@ function extractOpenAIContent(text: string): string {
 }
 
 async function callPeopleCount(openaiKey: string, model: string, imageUrl: string) {
-  const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model);
+  const usesCompletionTokens = /^gpt-5/i.test(model) || /^o\d/i.test(model) || /^gpt-5\.4/i.test(model);
   const body: Record<string, unknown> = {
     model,
     response_format: { type: "json_object" },
@@ -409,12 +413,14 @@ serve(async (req) => {
     // SEGUNDA VERIFICAÇÃO: Se a primeira análise diz que há apenas 1 pessoa,
     // faz uma segunda chamada focada EXCLUSIVAMENTE em contar pessoas/rostos.
     if (!result.criterios.empresario_ou_funcionario) {
-      console.log("[Re-scan] Primeira análise encontrou < 2 pessoas. Executando segunda verificação focada em contagem...");
+      // Re-scan com gpt-4.1-nano: mais rápido e barato para contagem simples de rostos
+      const RESCAN_MODEL = "gpt-4.1-nano";
+      console.log(`[Re-scan] Primeira análise (${model}) encontrou < 2 pessoas. Executando segunda verificação com ${RESCAN_MODEL}...`);
       try {
         // Tenta com a URL original, senão com base64
-        let recount = await callPeopleCount(openaiKey, model, imageUrl);
+        let recount = await callPeopleCount(openaiKey, RESCAN_MODEL, imageUrl);
         if (recount === 0) {
-          recount = await callPeopleCount(openaiKey, model, dataUrl);
+          recount = await callPeopleCount(openaiKey, RESCAN_MODEL, dataUrl);
         }
         console.log(`[Re-scan] Segunda verificação encontrou ${recount} pessoa(s).`);
         if (recount >= 2) {
