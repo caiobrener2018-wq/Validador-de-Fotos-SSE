@@ -59,6 +59,14 @@ async function analyzeOnce(
     const err: any = new Error('credits_exhausted'); err.credits = true; throw err;
   }
   if (data?.ok === false) throw new Error(data.message || data.error || 'Erro na análise');
+  
+  // Tratamento no frontend para contornar Edge Functions antigas que não foram re-deployadas.
+  // Se a resposta vier vazia, sem critérios ou com a mensagem de erro padrão de parsing,
+  // lançamos um erro para forçar o retry automático de forma transparente.
+  if (!data || data.justificativa === "Não foi possível analisar a imagem." || !data.criterios) {
+    throw new Error("Falha ao interpretar resposta da IA (será feito retry)");
+  }
+
   const { ok, ...result } = data || {};
   return result;
 }
